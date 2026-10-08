@@ -46,11 +46,11 @@ struct DownloadLibraryView: View {
                 EmptyView()
                     .contentTransition(.blurReplace)
                     .overlay {
-                        ContentUnavailableView {
-                            Label(L10n.noDownloads, systemImage: "arrow.down.circle")
-                        } description: {
-                            Text(L10n.downloadsEmptySubtitle)
-                        }
+                        ContentUnavailableView(
+                            L10n.noDownloads,
+                            systemImage: "arrow.down.circle",
+                            description: Text(L10n.downloadsEmptySubtitle)
+                        )
                     }
             }
         }
@@ -80,7 +80,20 @@ private struct DownloadRow: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(download.item.displayTitle), \(statusText)")
+        .accessibilityLabel("\(download.item.displayTitle), \(statusTitle)")
+    }
+
+    private var statusTitle: String {
+        switch download.state {
+        case .queued, .downloading:
+            L10n.downloading
+        case .completed:
+            L10n.downloaded
+        case .paused:
+            L10n.downloadPaused
+        case .failed:
+            L10n.downloadFailed
+        }
     }
 
     @ViewBuilder
@@ -112,7 +125,7 @@ private struct DownloadPoster: View {
         } else {
             PosterImage(
                 item: download.item,
-                type: .primary,
+                type: .portrait,
                 size: .small
             )
         }
