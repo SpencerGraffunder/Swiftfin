@@ -165,7 +165,7 @@ struct ItemActionButtons: View {
             case .delete:
                 Delete()
             case .download:
-                Download()
+                DownloadAction()
             #if os(iOS)
             case .editMetadata:
                 Edit()

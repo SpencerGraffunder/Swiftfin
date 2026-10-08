@@ -35,10 +35,11 @@ final class DownloadManager: ObservableObject {
 
     private var session: URLSession?
 
-    // Maps the stream URL of each active download task to the download ID.
-    // `NSMapTable` is thread-safe, so the nonisolated session delegate can
-    // read it from URLSession's background queue.
-    private static let taskURLMap: NSMapTable<URL, String> = NSMapTable(
+    // Maps the stream URL (absolute string) of each active download task to the
+    // download ID. `NSMapTable` is thread-safe, so the nonisolated session
+    // delegate can read it from URLSession's background queue. `NSString` is
+    // used for the key because `NSMapTable` requires class (reference) types.
+    private static let taskURLMap = NSMapTable(
         keyOptions: .strongMemory,
         valueOptions: .strongMemory
     )
@@ -191,7 +192,9 @@ final class DownloadManager: ObservableObject {
         }
 
         downloads[index].state = .paused
-        Self.taskURLMap.removeObject(forKey: streamURL(for: downloadID))
+        if let url = streamURL(for: downloadID) {
+            Self.taskURLMap.removeObject(forKey: url.absoluteString as NSString)
+        }
         Task { await persist() }
     }
 
@@ -333,13 +336,13 @@ final class DownloadManager: ObservableObject {
 
             let task: URLSessionDownloadTask
             if let resumeData = resumeDataByDownloadID[download.id], !resumeData.isEmpty {
-                task = session.downloadTask(with: request, resumeData: resumeData)
+                task = session.downloadTask(withResumeData: resumeData)
             } else {
                 task = session.downloadTask(with: request)
             }
 
             downloads[index].state = .downloading
-            Self.taskURLMap.setObject(download.id, forKey: url)
+            Self.taskURLMap.setObject(download.id as NSString, forKey: url.absoluteString as NSString)
 
             task.resume()
 
@@ -407,19 +410,23 @@ final class DownloadManager: ObservableObject {
             return
         }
 
-        for task in session?.tasks ?? [] {
-            if task is URLSessionDownloadTask, task.originalRequest?.url == url {
+        for task in session?.downloadTasks ?? [] {
+            if task.originalRequest?.url == url {
                 task.cancel { onCancelling($0 ?? Data()) }
             }
         }
 
-        Self.taskURLMap.removeObject(forKey: url)
+        Self.taskURLMap.removeObject(forKey: url.absoluteString as NSString)
     }
 
     private func streamURL(for downloadID: String) -> URL? {
         for key in Self.taskURLMap.objectKeys.allObjects {
-            if let key = key as? URL, Self.taskURLMap.object(for: key) == downloadID {
-                return key
+            if let value = Self.taskURLMap.object(for: key) as? String,
+               value == downloadID,
+               let keyString = key as? String,
+               let url = URL(string: keyString)
+            {
+                return url
             }
         }
 
@@ -512,11 +519,11 @@ final class DownloadManager: ObservableObject {
     }
 }
 
-/// A nonisolated `URLSessionDownloadTaskDelegate` that forwards URLSession
+/// A nonisolated `URLSessionDownloadDelegate` that forwards URLSession
 /// callbacks (delivered on URLSession's background queue) to the `@MainActor`
 /// `DownloadManager`. The download ID for a task is resolved via a shared,
-/// thread-safe `NSMapTable` keyed by stream URL.
-final class DownloadSessionDelegate: NSObject, URLSessionDownloadTaskDelegate, @unchecked Sendable {
+/// thread-safe `NSMapTable` keyed by stream URL string.
+final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
 
     private let manager: DownloadManager
 
@@ -569,6 +576,6 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadTaskDelegate, @
     private func downloadID(for task: URLSessionTask) -> String? {
         guard let url = task.originalRequest?.url else { return nil }
 
-        return DownloadManager.taskURLMap.object(for: url)
+        return DownloadManager.taskURLMap.object(for: url.absoluteString as NSString) as? String
     }
 }

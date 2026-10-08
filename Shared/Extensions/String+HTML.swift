@@ -57,12 +57,30 @@ extension String {
     /// The string rendered as an `AttributedString` from its HTML.
     ///
     /// Intended for full-text contexts with room (such as the overview popup),
-    /// preserving formatting like line breaks, italics, and bold while stripping
-    /// anything `AttributedString` does not understand. Falls back to the plain
-    /// string when it is not valid HTML.
+    /// preserving line breaks, italics, and bold while stripping anything that
+    /// can't be rendered. HTML is converted to the equivalent markdown (the
+    /// only rich-text init available on all supported platforms) and parsed
+    /// inline-only. Falls back to the plain, tag-stripped string.
     var htmlAttributedString: AttributedString {
         guard containsHTML else { return AttributedString(self) }
 
-        return (try? AttributedString(html: self)) ?? AttributedString(self)
+        let markdown = self
+            .replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: [.regularExpression, .caseInsensitive])
+            .replacingOccurrences(of: "<i>", with: "*", options: .caseInsensitive)
+            .replacingOccurrences(of: "</i>", with: "*", options: .caseInsensitive)
+            .replacingOccurrences(of: "<em>", with: "*", options: .caseInsensitive)
+            .replacingOccurrences(of: "</em>", with: "*", options: .caseInsensitive)
+            .replacingOccurrences(of: "<b>", with: "**", options: .caseInsensitive)
+            .replacingOccurrences(of: "</b>", with: "**", options: .caseInsensitive)
+            .replacingOccurrences(of: "<strong>", with: "**", options: .caseInsensitive)
+            .replacingOccurrences(of: "</strong>", with: "**", options: .caseInsensitive)
+            .htmlStripped
+
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace
+        )
+
+        return (try? AttributedString(markdown: markdown, options: options))
+            ?? AttributedString(htmlStripped)
     }
 }

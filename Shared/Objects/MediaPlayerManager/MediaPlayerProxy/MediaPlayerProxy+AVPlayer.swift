@@ -82,8 +82,10 @@ class AVMediaPlayerProxy: NSObject,
         // Opt the layer into Extended Dynamic Range so HDR/EDR content is
         // rendered with the display's headroom instead of being tone-mapped
         // down to SDR, which made direct-played HDR look noticeably dimmer than
-        // other players (issue #2345).
+        // other players (issue #2345). The API is only available on iOS.
+        #if os(iOS)
         avPlayerLayer.wantsExtendedDynamicRangeContent = true
+        #endif
 
         player.appliesMediaSelectionCriteriaAutomatically = false
 

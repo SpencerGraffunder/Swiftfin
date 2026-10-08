@@ -23,7 +23,7 @@ extension ItemActionButtons {
     /// - Paused: resume + cancel.
     /// - Failed: retry + cancel.
     /// - Completed: play (offline) + delete.
-    struct Download: View {
+    struct DownloadAction: View {
 
         @EnvironmentObject
         private var provider: ItemContentGroupProvider

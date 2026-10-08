@@ -31,12 +31,14 @@ struct DownloadLibraryView: View {
     var body: some View {
         Group {
             if manager.hasAnyDownloads {
-                List(manager.downloads) { download in
-                    DownloadRow(download: download)
-                        .contentShape(.rect)
-                        .onTapGesture {
-                            router.route(to: .item(item: download.item))
-                        }
+                List {
+                    ForEach(manager.downloads) { download in
+                        DownloadRow(download: download)
+                            .contentShape(.rect)
+                            .onTapGesture {
+                                router.route(to: .item(item: download.item))
+                            }
+                    }
                 }
                 .listStyle(.plain)
                 .onFirstAppear {
