@@ -154,7 +154,7 @@ enum DownloadStorage {
         let fileManager = FileManager.default
         let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.temporaryDirectory
-        let url = base.appending(path: name, directory: true)
+        let url = base.appendingPathComponent(name, isDirectory: true)
 
         try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
 

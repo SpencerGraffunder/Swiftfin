@@ -35,11 +35,15 @@ final class DownloadManager: ObservableObject {
 
     private var session: URLSession?
 
-    // Maps the stream URL (absolute string) of each active download task to the
-    // download ID. `NSMapTable` is thread-safe, so the nonisolated session
-    // delegate can read it from URLSession's background queue. `NSString` is
-    // used for the key because `NSMapTable` requires class (reference) types.
-    private static let taskURLMap = NSMapTable(
+    // The download task currently running for each download ID (used for
+    // cancellation). MainActor-isolated (the manager is @MainActor).
+    private var activeTasks: [String: URLSessionDownloadTask] = [:]
+
+    // Maps an active download task to the download ID. `NSMapTable` is
+    // thread-safe, so the nonisolated session delegate can read it from
+    // URLSession's background queue. The task object is used as the key
+    // because `NSMapTable` requires object (reference) types.
+    private static let taskIDMap = NSMapTable<AnyObject, AnyObject>(
         keyOptions: .strongMemory,
         valueOptions: .strongMemory
     )
@@ -90,7 +94,7 @@ final class DownloadManager: ObservableObject {
 
         #if os(iOS)
         configuration.sessionSendsLaunchEvents = true
-        configuration.sessionSendsPendingEvents = true
+        configuration.sessionSendsPersistentStateEvents = true
         #endif
 
         configuration.timeoutIntervalForResource = 24 * 60 * 60
@@ -192,9 +196,6 @@ final class DownloadManager: ObservableObject {
         }
 
         downloads[index].state = .paused
-        if let url = streamURL(for: downloadID) {
-            Self.taskURLMap.removeObject(forKey: url.absoluteString as NSString)
-        }
         Task { await persist() }
     }
 
@@ -303,6 +304,10 @@ final class DownloadManager: ObservableObject {
     }
 
     func notifyTaskFinished(_ downloadID: String) {
+        if let task = activeTasks.removeValue(forKey: downloadID) {
+            Self.taskIDMap.removeObject(forKey: task)
+        }
+
         processQueue()
     }
 
@@ -321,12 +326,12 @@ final class DownloadManager: ObservableObject {
     }
 
     private func startTask(for download: Download, in session: URLSession) {
-        guard let index = index(of: download.id) else { return }
-
         Task { @MainActor in
-            guard let url = await resolveStreamURL(for: download) else {
-                markFailed(download.id)
-                processQueue()
+            guard let index = self.index(of: download.id) else { return }
+
+            guard let url = await self.resolveStreamURL(for: download) else {
+                self.markFailed(download.id)
+                self.processQueue()
 
                 return
             }
@@ -335,18 +340,19 @@ final class DownloadManager: ObservableObject {
             request.timeoutInterval = 600
 
             let task: URLSessionDownloadTask
-            if let resumeData = resumeDataByDownloadID[download.id], !resumeData.isEmpty {
+            if let resumeData = self.resumeDataByDownloadID[download.id], !resumeData.isEmpty {
                 task = session.downloadTask(withResumeData: resumeData)
             } else {
                 task = session.downloadTask(with: request)
             }
 
-            downloads[index].state = .downloading
-            Self.taskURLMap.setObject(download.id as NSString, forKey: url.absoluteString as NSString)
+            self.downloads[index].state = .downloading
+            self.activeTasks[download.id] = task
+            Self.taskIDMap.setObject(download.id as NSString, forKey: task)
 
             task.resume()
 
-            Task { await persist() }
+            Task { await self.persist() }
         }
     }
 
@@ -404,33 +410,14 @@ final class DownloadManager: ObservableObject {
     // MARK: - Task helpers
 
     private func cancelActiveTask(for downloadID: String, onCancelling: @escaping (Data) -> Void) {
-        guard let url = streamURL(for: downloadID) else {
+        guard let task = activeTasks.removeValue(forKey: downloadID) else {
             onCancelling(Data())
 
             return
         }
 
-        for task in session?.downloadTasks ?? [] {
-            if task.originalRequest?.url == url {
-                task.cancel { onCancelling($0 ?? Data()) }
-            }
-        }
-
-        Self.taskURLMap.removeObject(forKey: url.absoluteString as NSString)
-    }
-
-    private func streamURL(for downloadID: String) -> URL? {
-        for key in Self.taskURLMap.objectKeys.allObjects {
-            if let value = Self.taskURLMap.object(for: key) as? String,
-               value == downloadID,
-               let keyString = key as? String,
-               let url = URL(string: keyString)
-            {
-                return url
-            }
-        }
-
-        return nil
+        Self.taskIDMap.removeObject(forKey: task)
+        task.cancel { onCancelling($0 ?? Data()) }
     }
 
     // MARK: - Persistence (CoreStore)
@@ -522,7 +509,7 @@ final class DownloadManager: ObservableObject {
 /// A nonisolated `URLSessionDownloadDelegate` that forwards URLSession
 /// callbacks (delivered on URLSession's background queue) to the `@MainActor`
 /// `DownloadManager`. The download ID for a task is resolved via a shared,
-/// thread-safe `NSMapTable` keyed by stream URL string.
+/// thread-safe `NSMapTable` keyed by the task object.
 final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
 
     private let manager: DownloadManager
@@ -574,8 +561,6 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
     }
 
     private func downloadID(for task: URLSessionTask) -> String? {
-        guard let url = task.originalRequest?.url else { return nil }
-
-        return DownloadManager.taskURLMap.object(for: url.absoluteString as NSString) as? String
+        DownloadManager.taskIDMap.object(for: task) as? String
     }
 }

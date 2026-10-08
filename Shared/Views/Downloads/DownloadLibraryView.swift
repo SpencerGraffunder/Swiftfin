@@ -30,34 +30,29 @@ struct DownloadLibraryView: View {
     }
 
     var body: some View {
-        Group {
-            if manager.hasAnyDownloads {
-                List {
-                    ForEach(manager.downloads) { download in
-                        DownloadRow(download: download)
-                            .contentShape(.rect)
-                            .onTapGesture {
-                                router.route(to: .item(item: download.item))
-                            }
-                    }
-                }
-                .listStyle(.plain)
-                .onFirstAppear {
-                    Task { await manager.start() }
-                }
-            } else {
-                EmptyView()
-                    .contentTransition(.blurReplace)
-                    .overlay {
-                        ContentUnavailableView(
-                            L10n.noDownloads,
-                            systemImage: "arrow.down.circle",
-                            description: Text(L10n.downloadsEmptySubtitle)
-                        )
+        List {
+            ForEach(manager.downloads) { download in
+                DownloadRow(download: download)
+                    .contentShape(.rect)
+                    .onTapGesture {
+                        router.route(to: .item(item: download.item))
                     }
             }
         }
+        .listStyle(.plain)
+        .overlay {
+            if manager.downloads.isEmpty {
+                ContentUnavailableView(
+                    L10n.noDownloads,
+                    systemImage: "arrow.down.circle",
+                    description: Text(L10n.downloadsEmptySubtitle)
+                )
+            }
+        }
         .navigationTitle(L10n.downloads)
+        .onFirstAppear {
+            Task { await manager.start() }
+        }
     }
 }
 
