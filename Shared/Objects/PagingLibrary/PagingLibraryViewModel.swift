@@ -261,15 +261,19 @@ class PagingLibraryViewModel<Library: PagingLibrary>: ViewModel, @MainActor Iden
 
         do {
             await _actuallyGetNextPage()
-        } catch if isURITooLong(error) {
-            // The server rejected the paging query with HTTP 414 (URI Too Long).
-            // This is a Jellyfin server-side limitation — most commonly triggered
-            // by a library sorted by `random` that is paged deeply (~190+ items),
-            // where the server builds an over-long internal query (issue #1966).
-            // There is no client-side URL to chunk, so the best in-app behavior
-            // is to stop paginating gracefully and keep the items already loaded
-            // rather than erroring the whole grid.
-            hasNextPage = false
+        } catch {
+            if isURITooLong(error) {
+                // The server rejected the paging query with HTTP 414 (URI Too Long).
+                // This is a Jellyfin server-side limitation — most commonly triggered
+                // by a library sorted by `random` that is paged deeply (~190+ items),
+                // where the server builds an over-long internal query (issue #1966).
+                // There is no client-side URL to chunk, so the best in-app behavior
+                // is to stop paginating gracefully and keep the items already loaded
+                // rather than erroring the whole grid.
+                hasNextPage = false
+            } else {
+                throw error
+            }
         }
     }
 
@@ -333,9 +337,13 @@ class PagingLibraryViewModel<Library: PagingLibrary>: ViewModel, @MainActor Iden
 
         do {
             try await retrieveNextSearchPage(query: normalizedSearchQuery)
-        } catch if isURITooLong(error) {
-            // Graceful stop for HTTP 414 (URI Too Long) — see `_getNextPage`.
-            hasNextSearchPage = false
+        } catch {
+            if isURITooLong(error) {
+                // Graceful stop for HTTP 414 (URI Too Long) — see `_getNextPage`.
+                hasNextSearchPage = false
+            } else {
+                throw error
+            }
         }
     }
 
