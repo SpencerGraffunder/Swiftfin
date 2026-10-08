@@ -30,6 +30,17 @@ extension FormatStyle where Self == MinuteSecondsFormatStyle {
 
 extension FormatStyle where Self == Duration.UnitsFormatStyle {
 
+    /// A wide-width duration style (e.g. "1 hour, 15 minutes") that reads
+    /// correctly under VoiceOver. Abbreviated forms such as "1h 15m" are
+    /// mispronounced ("1 h, 15 meters"), so anything surfaced to accessibility
+    /// should use this. See issue #1738.
+    static var wideUnits: Duration.UnitsFormatStyle {
+        Duration.UnitsFormatStyle(
+            allowedUnits: [.hours, .minutes, .seconds],
+            width: .wide
+        )
+    }
+
     static var playbackOffset: Duration.UnitsFormatStyle {
         Duration.UnitsFormatStyle(
             allowedUnits: [.seconds],
@@ -63,14 +74,15 @@ extension FormatStyle where Self == Duration.UnitsFormatStyle {
 struct RuntimeFormatStyle: FormatStyle {
 
     func format(_ value: Duration) -> String {
-
-        let formatStyle: Duration.TimeFormatStyle = if value.components.seconds.magnitude >= 3600 {
-            Duration.TimeFormatStyle(pattern: .hourMinuteSecond)
-        } else {
-            Duration.TimeFormatStyle(pattern: .minuteSecond)
-        }
-
-        return formatStyle.format(value)
+        // `Duration.UnitsFormatStyle` (unlike `TimeFormatStyle`) emits unit
+        // spellings that VoiceOver reads correctly — "1 hour, 15 minutes"
+        // instead of "1 h, 15 meters" — which is what issue #1738 is about.
+        // The default `zeroValueUnits: .hide` drops leading zero units, so short
+        // durations stay compact (e.g. "30 minutes", not "0 hours, 30 minutes").
+        Duration.UnitsFormatStyle(
+            allowedUnits: [.hours, .minutes, .seconds],
+            width: .wide
+        ).format(value)
     }
 }
 

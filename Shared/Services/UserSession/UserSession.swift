@@ -21,7 +21,8 @@ final class UserSession {
             accessToken: user.accessToken
         ),
         sessionConfiguration: .swiftfin,
-        sessionDelegate: URLSessionProxyDelegate(logger: NetworkLogger.swiftfin())
+        sessionDelegate: URLSessionProxyDelegate(logger: NetworkLogger.swiftfin()),
+        delegate: UnauthorizedSessionDelegate()
     )
 
     @MainActor

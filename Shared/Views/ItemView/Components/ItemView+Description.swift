@@ -34,17 +34,18 @@ extension ItemView {
                     }
 
                     if let itemOverview = item.overview, itemOverview.isNotEmpty {
+                        let strippedOverview = itemOverview.htmlStripped
                         InlinePlatformView {
                             Button {
                                 router.route(to: .itemOverview(item: item))
                             } label: {
-                                SeeMoreText(itemOverview)
+                                SeeMoreText(strippedOverview)
                                     .font(.footnote)
                                     .lineLimit(3)
                             }
                             .buttonStyle(.plain)
                         } tvOSView: {
-                            Text(itemOverview)
+                            Text(strippedOverview)
                                 .font(.footnote)
                                 .lineLimit(3)
                         }

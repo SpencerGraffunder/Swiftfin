@@ -87,13 +87,24 @@ extension BaseItemDto: Poster {
 
     @ViewBuilder
     func posterOverlay(for displayType: PosterDisplayType) -> some View {
-        ZStack {
-            PosterIndicatorsOverlay(
-                item: self,
-                posterDisplayType: displayType
-            )
+        // The grid updates this item's `userData` in place when a favorite or
+        // watched state changes (see `PagingLibraryViewModel.updateItemUserData`),
+        // but the overlay subtree was not re-rendering to reflect the new
+        // favorite/watched indicators. Forcing an identity change on the
+        // `.itemUserDataDidChange` notification for this item makes the overlay
+        // re-read the updated `userData` (issue #1514).
+        RedrawOnNotificationView(
+            .itemUserDataDidChange,
+            filter: { $0.itemID == id }
+        ) {
+            ZStack {
+                PosterIndicatorsOverlay(
+                    item: self,
+                    posterDisplayType: displayType
+                )
 
-            PosterSelectionOverlay()
+                PosterSelectionOverlay()
+            }
         }
     }
 

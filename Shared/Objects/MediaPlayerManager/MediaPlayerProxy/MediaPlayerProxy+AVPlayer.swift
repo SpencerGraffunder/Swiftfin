@@ -11,6 +11,7 @@ import AVKit
 import Defaults
 import Foundation
 @preconcurrency import JellyfinAPI
+import QuartzCore
 import SwiftUI
 
 @MainActor
@@ -77,6 +78,12 @@ class AVMediaPlayerProxy: NSObject,
         self.avPlayerLayer = AVPlayerLayer(player: player)
 
         super.init()
+
+        // Opt the layer into Extended Dynamic Range so HDR/EDR content is
+        // rendered with the display's headroom instead of being tone-mapped
+        // down to SDR, which made direct-played HDR look noticeably dimmer than
+        // other players (issue #2345).
+        avPlayerLayer.wantsExtendedDynamicRangeContent = true
 
         player.appliesMediaSelectionCriteriaAutomatically = false
 

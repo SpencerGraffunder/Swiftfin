@@ -8,6 +8,7 @@
 
 import Combine
 import Foundation
+import Get
 import IdentifiedCollections
 import JellyfinAPI
 
@@ -258,7 +259,18 @@ class PagingLibraryViewModel<Library: PagingLibrary>: ViewModel, @MainActor Iden
     private func _getNextPage() async throws {
         guard hasNextPage else { return }
 
-        await _actuallyGetNextPage()
+        do {
+            await _actuallyGetNextPage()
+        } catch if isURITooLong(error) {
+            // The server rejected the paging query with HTTP 414 (URI Too Long).
+            // This is a Jellyfin server-side limitation — most commonly triggered
+            // by a library sorted by `random` that is paged deeply (~190+ items),
+            // where the server builds an over-long internal query (issue #1966).
+            // There is no client-side URL to chunk, so the best in-app behavior
+            // is to stop paginating gracefully and keep the items already loaded
+            // rather than erroring the whole grid.
+            hasNextPage = false
+        }
     }
 
     @Function(\Action.Cases._actuallyGetNextPage)
@@ -289,6 +301,14 @@ class PagingLibraryViewModel<Library: PagingLibrary>: ViewModel, @MainActor Iden
         )
     }
 
+    /// Whether the error is the HTTP 414 (URI Too Long) the Jellyfin server
+    /// returns when a paging query grows too large. See issue #1966.
+    private func isURITooLong(_ error: Error) -> Bool {
+        guard case let APIError.unacceptableStatusCode(statusCode) = error else { return false }
+
+        return statusCode == 414
+    }
+
     @Function(\Action.Cases.search)
     private func _search(_ query: String) async throws {
         guard query.isNotEmpty,
@@ -311,7 +331,12 @@ class PagingLibraryViewModel<Library: PagingLibrary>: ViewModel, @MainActor Iden
               !background.is(.searching)
         else { return }
 
-        try await retrieveNextSearchPage(query: normalizedSearchQuery)
+        do {
+            try await retrieveNextSearchPage(query: normalizedSearchQuery)
+        } catch if isURITooLong(error) {
+            // Graceful stop for HTTP 414 (URI Too Long) — see `_getNextPage`.
+            hasNextSearchPage = false
+        }
     }
 
     private func retrieveNextSearchPage(query: String) async throws {

@@ -27,6 +27,9 @@ extension ItemView {
 
                 if let runtime = item.runtime {
                     Text(runtime, format: .hourMinuteAbbreviated)
+                        // The abbreviated "1h 15m" is read as "1 h, 15 meters"
+                        // by VoiceOver; spell out the units (#1738).
+                        .accessibilityLabel(runtime.formatted(.wideUnits))
                 }
 
                 if let seasonEpisodeLabel = item.seasonEpisodeLabel {

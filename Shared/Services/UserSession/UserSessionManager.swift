@@ -38,6 +38,7 @@ final class UserSessionManager: ObservableObject {
     enum SignOutReason {
         case backgroundTimeout
         case explicit
+        case unauthorized
     }
 
     enum AuthenticationError: Error {

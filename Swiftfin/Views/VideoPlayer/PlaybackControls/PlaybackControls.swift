@@ -79,6 +79,30 @@ extension VideoPlayer {
                     .isVisible(viewState.visibleElements.contains(.playbackButtons))
                     .enabled(viewState.visibleElements.contains(.playbackButtons))
             }
+            // The overlay controls fade out after inactivity and, while faded, are
+            // removed from the accessibility tree (opacity 0 + disabled), so a
+            // VoiceOver user can no longer reach them or exit the player (issue
+            // #1733). This button is present in the accessibility tree and tappable
+            // whenever the overlay is faded, so it can always be reached to bring
+            // the controls back — mirroring the native player's full-screen "show
+            // controls" button. While the real controls are showing it is inert and
+            // hidden from accessibility, so it neither steals their touches nor
+            // adds a redundant element. It is invisible and small so sighted
+            // users' taps on the video/scrubber are unaffected.
+            .overlay(alignment: .topTrailing) {
+                Button(action: {
+                    viewState.showControls()
+                }) label: {
+                    Color.clear
+                        .frame(width: 44, height: 44)
+                        .contentShape(.rect)
+                }
+                .opacity(0)
+                .allowsHitTesting(!viewState.isPresentingControls)
+                .accessibilityHidden(viewState.isPresentingControls)
+                .accessibilityLabel(L10n.showPlayerControls)
+                .accessibilityAddTraits(.isButton)
+            }
             .modifier(VideoPlayer.KeyCommandsModifier())
             .animation(.linear(duration: 0.1), value: isScrubbing)
             .animation(.bouncy(duration: 0.4), value: viewState.isPresentingSupplement)
