@@ -9,6 +9,7 @@
 import Defaults
 import JellyfinAPI
 import SwiftUI
+import UIKit
 
 /// The root view of the Downloads tab (issue #1789).
 ///

@@ -90,9 +90,9 @@ extension VideoPlayer {
             // adds a redundant element. It is invisible and small so sighted
             // users' taps on the video/scrubber are unaffected.
             .overlay(alignment: .topTrailing) {
-                Button(action: {
+                Button {
                     viewState.showControls()
-                }) label: {
+                } label: {
                     Color.clear
                         .frame(width: 44, height: 44)
                         .contentShape(.rect)
