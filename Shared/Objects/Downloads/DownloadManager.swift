@@ -43,7 +43,7 @@ final class DownloadManager: ObservableObject {
     // thread-safe, so the nonisolated session delegate can read it from
     // URLSession's background queue. The task object is used as the key
     // because `NSMapTable` requires object (reference) types.
-    private static let taskIDMap = NSMapTable<AnyObject, AnyObject>(
+    fileprivate static let taskIDMap = NSMapTable<AnyObject, AnyObject>(
         keyOptions: .strongMemory,
         valueOptions: .strongMemory
     )
@@ -94,7 +94,6 @@ final class DownloadManager: ObservableObject {
 
         #if os(iOS)
         configuration.sessionSendsLaunchEvents = true
-        configuration.sessionSendsPersistentStateEvents = true
         #endif
 
         configuration.timeoutIntervalForResource = 24 * 60 * 60
@@ -561,6 +560,6 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
     }
 
     private func downloadID(for task: URLSessionTask) -> String? {
-        DownloadManager.taskIDMap.object(for: task) as? String
+        DownloadManager.taskIDMap.object(forKey: task) as? String
     }
 }
