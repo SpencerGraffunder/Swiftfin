@@ -18,6 +18,7 @@ enum ItemActionButton: String, CaseIterable, Displayable, Equatable, Identifiabl
     case subtitles
     case refresh
     case delete
+    case download
     #if os(iOS)
     case editMetadata
     #endif
@@ -40,6 +41,8 @@ enum ItemActionButton: String, CaseIterable, Displayable, Equatable, Identifiabl
             L10n.subtitles
         case .delete:
             L10n.delete
+        case .download:
+            L10n.download
         #if os(iOS)
         case .editMetadata:
             L10n.edit
@@ -69,6 +72,8 @@ enum ItemActionButton: String, CaseIterable, Displayable, Equatable, Identifiabl
             "captions.bubble"
         case .delete:
             "trash"
+        case .download:
+            "arrow.down.circle"
         #if os(iOS)
         case .editMetadata:
             "pencil"
@@ -111,6 +116,7 @@ enum ItemActionButton: String, CaseIterable, Displayable, Equatable, Identifiabl
     static let defaultMenuActionButtons: [ItemActionButton] = [
         .refresh,
         .subtitles,
+        .download,
         .delete
     ]
         #if os(iOS)

@@ -103,6 +103,10 @@ struct ItemActionButtons: View {
             provider.item.canEditSubtitles
         case .delete:
             provider.item.canDelete == true
+        case .download:
+            Defaults[.Experimental.downloads]
+                && provider.item.canBePlayed
+                && provider.item.mediaSources?.isEmpty == false
         #if os(iOS)
         case .editMetadata:
             provider.item.canEditMetadata
@@ -160,6 +164,8 @@ struct ItemActionButtons: View {
                 Subtitles()
             case .delete:
                 Delete()
+            case .download:
+                Download()
             #if os(iOS)
             case .editMetadata:
                 Edit()

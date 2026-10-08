@@ -412,6 +412,12 @@ extension Defaults.Keys {
             UserKey(L10n.download, default: false)
         }
 
+        /// The maximum number of downloads allowed to run concurrently
+        /// (issue #1788).
+        static var downloadsConcurrency: Key<Int> {
+            UserKey("downloadsConcurrency", default: 2)
+        }
+
         static var serverConnectionAutoSwitch: Key<Bool> {
             UserKey("experimentalServerConnectionAutoSwitch", default: false)
         }

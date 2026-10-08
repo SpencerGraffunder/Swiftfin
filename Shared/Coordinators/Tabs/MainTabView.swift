@@ -35,6 +35,9 @@ struct MainTabView: View {
             TabItem.contentGroup(provider: DefaultContentGroupProvider())
             TabItem.search
             TabItem.media
+            if Defaults[.Experimental.downloads] {
+                TabItem.downloads
+            }
         }
         #else
         TabCoordinator {

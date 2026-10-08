@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Defaults
 import JellyfinAPI
 import SwiftUI
 
@@ -132,6 +133,21 @@ extension TabItem {
             systemImage: "magnifyingglass"
         ) {
             SearchView()
+                .if(UIDevice.isTV) { view in
+                    view.toolbar(.hidden, for: .navigationBar)
+                }
+        }
+    }
+
+    /// The local downloads tab (issue #1789). Only shown when the experimental
+    /// Downloads feature is enabled.
+    static var downloads: TabItem {
+        TabItem(
+            id: "downloads",
+            title: L10n.downloads,
+            systemImage: "arrow.down.circle"
+        ) {
+            DownloadLibraryView()
                 .if(UIDevice.isTV) { view in
                     view.toolbar(.hidden, for: .navigationBar)
                 }
