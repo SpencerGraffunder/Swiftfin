@@ -14,6 +14,10 @@ on:
       - synchronize
       - ready_for_review
     branches: [ main ]
+  # Fork-friendly manual trigger: GitHub disables Actions on forks by default,
+  # so a push may not run CI until the owner enables Actions in the fork's
+  # Settings/Actions tab. Once enabled, the workflow can be run on demand.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
