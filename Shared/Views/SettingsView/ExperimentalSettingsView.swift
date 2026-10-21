@@ -15,6 +15,8 @@ struct ExperimentalSettingsView: View {
 
     static let isEnabled = true
 
+    @Default(.Experimental.downloads)
+    private var isDownloadsEnabled
     @Default(.Experimental.mpvPlayer)
     private var isMPVEnabled
     @Default(.Experimental.serverConnectionAutoSwitch)
@@ -36,6 +38,7 @@ struct ExperimentalSettingsView: View {
             Toggle("Auto switch connection", isOn: $isServerConnectionAutoSwitchEnabled)
             #endif
 
+            Toggle(L10n.downloads, isOn: $isDownloadsEnabled)
             // swiftlint:enable hard_coded_display_string
         }
         .onChange(of: isMPVEnabled) {

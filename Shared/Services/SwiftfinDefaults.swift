@@ -406,10 +406,11 @@ extension Defaults.Keys {
             UserKey("experimentalMPVPlayer", default: false)
         }
 
-        // TODO: don't use L10n key as key, just used to not
-        // lose translations
         static var downloads: Key<Bool> {
-            UserKey(L10n.download, default: false)
+            // Enabled by default (issue #1787). The key is a stable literal —
+            // the previous L10n-derived key was never written by any install,
+            // so no migration is needed.
+            UserKey("experimentalDownloads", default: true)
         }
 
         /// The maximum number of downloads allowed to run concurrently
