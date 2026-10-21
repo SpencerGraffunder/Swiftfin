@@ -42,7 +42,9 @@ target.add_dependency(app_target)
 target.build_configurations.each do |config|
   s = config.build_settings
   s['PRODUCT_BUNDLE_IDENTIFIER'] = "#{bundle_prefix}.SwiftfinUITests"
+  s['PRODUCT_NAME'] = '$(TARGET_NAME)'
   s['TEST_TARGET_NAME'] = app_target.name
+  s['USES_XCTRUNNER'] = 'YES'
   s['GENERATE_INFOPLIST_FILE'] = 'YES'
   s['SDKROOT'] = 'iphoneos'
   s['TARGETED_DEVICE_FAMILY'] = '1,2'
