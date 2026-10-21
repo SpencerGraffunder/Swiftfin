@@ -55,8 +55,6 @@ end
 project.save
 
 # --- Scheme wiring (xcodeproj gem API; keeps element order valid) -----------
-require 'xcodeproj/xcscheme'
-
 scheme = Xcodeproj::XCScheme.new(scheme_path)
 unless File.read(scheme_path).include?(target_name)
   scheme.add_build_target(target, false)   # BuildForTesting=YES, Running=NO
