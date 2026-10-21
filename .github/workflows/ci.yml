@@ -31,7 +31,9 @@ jobs:
       matrix:
         scheme:
           - "Swiftfin"
-          - "Swiftfin tvOS"
+          # tvOS build paused 2026-10-21 to halve Actions macOS-minute burn.
+          # Re-add "Swiftfin tvOS" when needed; testflight.yml still builds it
+          # on demand (dispatch with platform: tvOS).
 
     runs-on: macos-26
 
