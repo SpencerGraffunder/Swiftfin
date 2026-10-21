@@ -30,13 +30,10 @@ final class DownloadFlowUITests: XCTestCase {
     /// The small (~4 MB) ffmpeg-generated movie. test01 downloads it to completion.
     private let smallMovieTitle = "QA Movie"
 
-    override class func setUp() {
-        super.setUp()
-        continueAfterFailure = false
-    }
-
     @MainActor
     override func setUpWithError() throws {
+        // Instance property — cannot be set from class func setUp().
+        continueAfterFailure = false
         Self.app.launch()
     }
 
