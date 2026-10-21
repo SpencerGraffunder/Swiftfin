@@ -150,24 +150,26 @@ final class DownloadFlowUITests: XCTestCase {
     /// (observed CI failure: "URL field never appeared" with the field on screen).
     /// Prefers a visible named field; falls back to the only visible field.
     private func findField(in collection: XCUIElementQuery, title: String, timeout: TimeInterval) -> XCUIElement? {
+        // NOTE: `visible` is not a valid XCUIElementQuery predicate keypath (XCTest
+        // throws XCTElementQueryInvalidPredicate); visibility is checked via isHittable.
         let named = collection.matching(NSPredicate(
-            format: "visible == 1 AND (label CONTAINS[cd] %@ OR placeholderValue CONTAINS[cd] %@)", title, title
+            format: "label CONTAINS[cd] %@ OR placeholderValue CONTAINS[cd] %@", title, title
         ))
-        let anyVisible = collection.matching(NSPredicate(format: "visible == 1"))
         let deadline = Date().addingTimeInterval(timeout)
         let namedFirst = named.firstMatch
-        let visibleFirst = anyVisible.firstMatch
         repeat {
-            if namedFirst.exists {
+            if namedFirst.exists, namedFirst.isHittable {
                 return namedFirst
             }
-            if title.isEmpty, visibleFirst.exists {
-                return visibleFirst
+            let hittable = collection.allElementsBoundByIndex.filter { $0.isHittable }
+            if title.isEmpty, let field = hittable.first {
+                return field
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.5))
         } while Date() < deadline
-        // Nothing matched by name — if exactly one visible field exists, take it.
-        return anyVisible.count == 1 ? anyVisible.element(boundBy: 0) : nil
+        // Nothing matched by name — if exactly one hittable field exists, take it.
+        let hittable = collection.allElementsBoundByIndex.filter { $0.isHittable }
+        return hittable.count == 1 ? hittable.first : nil
     }
 
     /// Dumps the raw element labels to the test log so selector mismatches are
