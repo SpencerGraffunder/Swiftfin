@@ -68,7 +68,7 @@ jobs:
             -project Swiftfin.xcodeproj \
             -scheme Swiftfin \
             -destination "platform=iOS Simulator,id=$SIM_UDID" \
-            -derivedDataPath ./dd \
+            -derivedDataPath ./build \
             -skipMacroValidation \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO \
@@ -88,11 +88,11 @@ jobs:
           QA_PASS: ${{ inputs.qa_pass }}
         run: |
           set -o pipefail
-          XCTRUN=$(ls dd/Build/Products/*-*.xctestrun)
+          XCTRUN=$(ls build/Build/Products/*-*.xctestrun)
           xcodebuild test-without-building \
             -xctestrun "$XCTRUN" \
             -destination "platform=iOS Simulator,id=$SIM_UDID" \
-            -derivedDataPath ./dd \
+            -derivedDataPath ./build \
             -resultBundlePath ./qa.xcresult \
             | tee test-run.log
 

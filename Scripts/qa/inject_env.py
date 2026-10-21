@@ -7,7 +7,7 @@ import sys
 
 
 def main() -> int:
-    path = glob.glob(os.environ.get("XCTRUN_GLOB", "dd/Build/Products/*-*.xctestrun"))
+    path = glob.glob(os.environ.get("XCTRUN_GLOB", "build/Build/Products/*-*.xctestrun"))
     if not path:
         print("no xctestrun found", file=sys.stderr)
         return 1
