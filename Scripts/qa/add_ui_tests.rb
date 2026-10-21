@@ -17,7 +17,8 @@ project = Xcodeproj::Project.open(project_path)
 app_target = project.targets.find { |t| t.name == 'Swiftfin iOS' } ||
              project.targets.find { |t| t.name == 'Swiftfin' } ||
              abort("app target 'Swiftfin iOS' not found")
-app_product = app_target.product_reference.path || 'Swiftfin.app'
+ios = true
+bundle_prefix = 'app.swiftfin'
 
 existing = project.targets.find { |t| t.name == target_name }
 project.targets.delete(existing) if existing
@@ -40,7 +41,9 @@ target.add_dependency(app_target)
 
 target.build_configurations.each do |config|
   s = config.build_settings
+  s['PRODUCT_BUNDLE_IDENTIFIER'] = "#{bundle_prefix}.SwiftfinUITests"
   s['TEST_TARGET_NAME'] = app_target.name
+  s['TEST_HOST'] = '$(BUILT_PRODUCTS_DIR)/Swiftfin.app/$(BUNDLE_LOADER_PATH)' if ios
   s['GENERATE_INFOPLIST_FILE'] = 'YES'
   s['SDKROOT'] = 'iphoneos'
   s['TARGETED_DEVICE_FAMILY'] = '1,2'
