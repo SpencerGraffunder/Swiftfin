@@ -54,51 +54,15 @@ end
 
 project.save
 
-# --- Scheme wiring -----------------------------------------------------------
-doc = File.open(scheme_path) { |f| REXML::Document.new(f) }
+# --- Scheme wiring (xcodeproj gem API; keeps element order valid) -----------
+require 'xcodeproj/xcscheme'
 
-launch_ref = doc.root.elements['LaunchAction/BuildableProductRunnable/BuildableReference']
-raise 'scheme LaunchAction reference missing' unless launch_ref
-
-test_action = doc.root.elements['TestAction'] ||
-              doc.root.elements.add_element('TestAction').tap do |el|
-                el.add_attribute('buildConfiguration', 'Debug')
-                el.add_attribute('selectedDebuggerIdentifier', 'Xcode.DebuggerFoundation.Debugger.LLDB')
-              end
-
-test_action.add_attribute('macroExpansion', 'primary')
-test_action.add_attribute('selectedLauncherIdentifier', 'Xcode.DebuggerFoundation.Launcher.LLDB')
-test_action.add_attribute('shouldUseLaunchSchemeArgsEnv', 'YES')
-
-list = test_action.elements['Testables'] || test_action.elements.add_element('Testables')
-list.delete(list.elements["TestableBuildableReference[@BlueprintName='#{target_name}']"])
-
-testable = list.add_element('TestableBuildableReference')
-testable.add_attribute('BuildableIdentifier', 'primary')
-testable.add_attribute('BlueprintIdentifier', target.uuid)
-testable.add_attribute('BlueprintName', target_name)
-testable.add_attribute('BuildableName', "#{target_name}.xctest")
-testable.add_attribute('ReferencedContainer', launch_ref.attributes['ReferencedContainer'])
-testable.add_attribute('Skipped', 'NO')
-testable.add_attribute('Parallelizable', 'NO')
-
-# The scheme must also build the test target: add a BuildEntry for it
-build_action = doc.root.elements['BuildAction']
-build_entries = build_action && build_action.elements['BuildActionEntries']
-if build_entries && !build_entries.elements["BuildableReference[@BlueprintName='#{target_name}']"]
-  entry = build_entries.add_element('BuildActionEntry')
-  entry.add_attribute('buildForTesting', 'YES')
-  entry.add_attribute('buildForRunning', 'NO')
-  entry.add_attribute('buildForProfiling', 'NO')
-  entry.add_attribute('buildForArchiving', 'NO')
-  entry.add_attribute('buildForAnalyzing', 'NO')
-  ref = entry.add_element('BuildableReference')
-  ref.add_attribute('BuildableIdentifier', 'primary')
-  ref.add_attribute('BlueprintIdentifier', target.uuid)
-  ref.add_attribute('BuildableName', "#{target_name}.xctest")
-  ref.add_attribute('BlueprintName', target_name)
-  ref.add_attribute('ReferencedContainer', launch_ref.attributes['ReferencedContainer'])
+scheme = Xcodeproj::XCScheme.new(scheme_path)
+unless File.read(scheme_path).include?(target_name)
+  scheme.add_build_target(target, false)   # BuildForTesting=YES, Running=NO
+  scheme.add_test_target(target)
+  scheme.set_launch_target(app_target)     # also sets TestAction macroExpansion
 end
+scheme.save_as(project_path, 'Swiftfin', true)
 
-File.open(scheme_path, 'w') { |f| doc.write(f, 2) }
 puts "Added #{target_name} (#{test_files.size} sources) to #{project_path}; host: #{app_target.name}"

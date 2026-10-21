@@ -146,7 +146,72 @@ final class DownloadFlowUITests: XCTestCase {
         snap("13-download-complete")
     }
 
-    func test02CompletedDownloadOffersOfflinePlay() throws {
+    func test02PauseCancelStateMachine() throws {
+        let app = Self.app
+        app.launch()
+        dismissChrome(app)
+
+        if !tapIfExists(app.tabBars.buttons["Movies"], timeout: 25) {
+            tapIfExists(app.tabBars.buttons["Home"], timeout: 5)
+        }
+        if !tapIfExists(app.images["QA Big Movie"], timeout: 20) {
+            app.swipeUp()
+            XCTAssertTrue(tapIfExists(app.images["QA Big Movie"], timeout: 8)
+                || tapIfExists(app.staticTexts["QA Big Movie"], timeout: 8),
+                "QA Big Movie not visible")
+        }
+
+        let downloadButton = app.buttons["Download"]
+        XCTAssertTrue(downloadButton.waitForExistence(timeout: 15), "download button missing on Big Movie")
+        downloadButton.tap()
+        let candidates = app.buttons["Download"].allMatchingElements.filter(\.isHittable)
+        let startButton = candidates.max(by: { $0.frame.minY < $1.frame.minY })!
+        startButton.tap()
+
+        // Re-open the menu: active download must offer Pause + Cancel (or Play if already done)
+        XCTAssertTrue(downloadButton.waitForExistence(timeout: 20))
+        downloadButton.tap()
+        let pauseItem = app.buttons["Pause"].firstMatch
+        let playItem = app.buttons["Play"].firstMatch
+        if pauseItem.waitForExistence(timeout: 8) {
+            pauseItem.tap()
+            let pausedLabel = app.buttons.matching(
+                NSPredicate(format: "label CONTAINS[cd] 'download paused'")
+            ).firstMatch
+            XCTAssertTrue(pausedLabel.waitForExistence(timeout: 20), "label did not become Download Paused")
+            snap("20-paused")
+
+            downloadButton.tap()
+            if app.buttons["Resume"].firstMatch.waitForExistence(timeout: 5) {
+                app.buttons["Resume"].firstMatch.tap()
+            }
+            snap("21-resumed")
+            downloadButton.tap()
+        } else if playItem.waitForExistence(timeout: 3) {
+            // Small-enough file finished already: completed menu must show Play + Delete
+            XCTAssertTrue(app.buttons["Delete"].firstMatch.waitForExistence(timeout: 5),
+                          "completed menu missing Delete")
+            snap("20-completed-menu")
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
+            return
+        }
+        // Cancel from whatever state we are in now
+        XCTAssertTrue(downloadButton.waitForExistence(timeout: 10))
+        downloadButton.tap()
+        let cancel = app.buttons["Cancel"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 8), "menu missing Cancel action")
+        cancel.tap()
+        snap("22-cancelled")
+
+        // Downloads tab must no longer list the cancelled download
+        tapIfExists(app.tabBars.buttons["Downloads"], timeout: 10)
+        let gone = NSPredicate(format: "label CONTAINS[cd] 'QA Big Movie'")
+        let stillThere = app.cells.matching(gone).firstMatch.waitForExistence(timeout: 5)
+        XCTAssertFalse(stillThere, "cancelled download still listed in Downloads tab")
+        snap("23-cancel-row-gone")
+    }
+
+    func test03CompletedDownloadOffersOfflinePlay() throws {
         let app = Self.app
         app.launch()
         dismissChrome(app)
