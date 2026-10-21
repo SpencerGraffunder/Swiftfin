@@ -105,6 +105,22 @@ final class DownloadFlowUITests: XCTestCase {
         query.firstMatch.waitForExistence(timeout: timeout)
     }
 
+    /// Finds a text field by visible title. A SwiftUI `TextField`/`SecureField`
+    /// in a Form row exposes its title ONLY as `placeholderValue` while the field
+    /// is empty — `label` stays empty — so `label == 'URL'` matches nothing
+    /// (observed CI failure: "URL field never appeared" with the field on screen).
+    /// Match label OR placeholderValue, case-insensitive contains.
+    private func findField(in collection: XCUIElementQuery, title: String, timeout: TimeInterval) -> XCUIElement? {
+        let pred = NSPredicate(format: "label CONTAINS[cd] %@ OR placeholderValue CONTAINS[cd] %@", title, title)
+        let query = collection.matching(pred)
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if query.count > 0 { return query.element(boundBy: 0) }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        } while Date() < deadline
+        return nil
+    }
+
     /// Flips the first-run disclaimer if present.
     private func acceptDisclaimerIfNeeded(_ app: XCUIApplication) {
         _ = tapButton(app.buttons, "Continue", timeout: 3)
@@ -118,9 +134,10 @@ final class DownloadFlowUITests: XCTestCase {
     }
 
     /// Taps the button of a system permission alert (local-network discovery etc.)
-    /// if one is up. Those live in SpringBoard, not the app's own element tree.
+    /// or the first-keyboard "slide to type" tip if one is up. Those live in
+    /// SpringBoard, not the app's own element tree.
     private func dismissSystemAlert() {
-        for label in ["Allow", "OK", "Later", "Don’t Allow"] {
+        for label in ["Allow", "OK", "Later", "Don’t Allow", "Continue"] {
             let b = springboard.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
             if b.waitForExistence(timeout: 0.5) { b.tap(); return }
         }
@@ -141,7 +158,7 @@ final class DownloadFlowUITests: XCTestCase {
         if !tapButton(app.buttons, "Connect", timeout: 30) {
             // Servers exist but no user signed in: the sign-in screen should already
             // be visible; as a backstop try the Advanced/gear menu's Add-server entry.
-            if !exists(app.textFields.matching(NSPredicate(format: "label == 'Username'")), timeout: 8) {
+            if findField(in: app.textFields, title: "Username", timeout: 8) == nil {
                 _ = tapButton(app.buttons, "Advanced", timeout: 5)
                 _ = tapButton(app.buttons, "Add server", timeout: 5)
             }
@@ -151,13 +168,22 @@ final class DownloadFlowUITests: XCTestCase {
         dismissSystemAlert()
         snap("01-connect-screen")
 
-        let urlField = app.textFields.matching(NSPredicate(format: "label == 'URL'")).firstMatch
-        XCTAssertTrue(
-            urlField.waitForExistence(timeout: 15),
-            "URL field never appeared on the add-server form"
-        )
+        guard let urlField = findField(in: app.textFields, title: "URL", timeout: 15) else {
+            snap("01b-url-field-missing")
+            return XCTFail("URL field never appeared on the add-server form")
+        }
         urlField.tap()
+        // The very first keyboard on a fresh simulator triggers the iOS
+        // "slide to type" onboarding tip (a SpringBoard overlay with a
+        // "Continue" button) that covers the keyboard area.
+        dismissSystemAlert()
         urlField.typeText(serverURL)
+        if (urlField.value as? String)?.contains(serverURL) != true {
+            // The tip or a focus hiccup ate the first input pass — retry once.
+            urlField.tap()
+            dismissSystemAlert()
+            urlField.typeText(serverURL)
+        }
         _ = tapFirst(app.keyboards.buttons.matching(NSPredicate(format: "label == 'Return'")), timeout: 3)
 
         XCTAssertTrue(
@@ -166,16 +192,17 @@ final class DownloadFlowUITests: XCTestCase {
         )
         snap("02-server-connected")
 
-        let userField = app.textFields.matching(NSPredicate(format: "label == 'Username'")).firstMatch
-        XCTAssertTrue(
-            userField.waitForExistence(timeout: 25),
-            "user sign-in screen never appeared after connecting to the server"
-        )
+        guard let userField = findField(in: app.textFields, title: "Username", timeout: 25) else {
+            snap("02b-signin-screen")
+            return XCTFail("user sign-in screen never appeared after connecting to the server")
+        }
         userField.tap()
         userField.typeText(username)
 
-        let passField = app.secureTextFields.matching(NSPredicate(format: "label == 'Password'")).firstMatch
-        XCTAssertTrue(passField.waitForExistence(timeout: 10), "password field missing")
+        guard let passField = findField(in: app.secureTextFields, title: "Password", timeout: 10) else {
+            snap("02c-password-missing")
+            return XCTFail("password field missing")
+        }
         passField.tap()
         passField.typeText(password)
         _ = tapFirst(app.keyboards.buttons.matching(NSPredicate(format: "label == 'Return'")), timeout: 3)
