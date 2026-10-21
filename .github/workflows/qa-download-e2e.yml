@@ -38,6 +38,12 @@ jobs:
       - name: Install xcodeproj gem
         run: gem install xcodeproj -N
 
+      - name: Install Homebrew dependencies
+        # The app's Run SwiftFormat/SwiftLint build phases require current brew
+        # versions (the runner image's preinstalled swiftformat cannot parse
+        # newer dependency sources). Mirrors .github/workflows/ci.yml.
+        run: brew bundle --file Brewfile
+
       - name: Add UI test target
         run: ruby Scripts/qa/add_ui_tests.rb
 
