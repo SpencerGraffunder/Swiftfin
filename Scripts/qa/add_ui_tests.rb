@@ -29,12 +29,15 @@ target = project.new_target(:ui_test_bundle, target_name, :ios, '16.4')
 tests_group = project.main_group.find_subpath('Tests', true)
 tests_group.set_source_tree('<group>')
 tests_group.set_path('Tests')
+tests_leaf = tests_group.find_subpath('SwiftfinUITests', true)
+tests_leaf.set_source_tree('<group>')
+tests_leaf.set_path('SwiftfinUITests')
 test_files = Dir.glob(File.join(tests_dir, '*.swift')).sort
 raise "no test sources under #{tests_dir}" if test_files.empty?
 
 test_files.each do |path|
-  ref = tests_group.files.find { |f| f.path&.end_with?(File.basename(path)) } ||
-        tests_group.new_reference(File.basename(path))
+  ref = tests_leaf.files.find { |f| f.path == File.basename(path) } ||
+        tests_leaf.new_reference(File.basename(path))
   ref.set_source_tree('<group>')
   target.source_build_phase.add_file_reference(ref)
 end
