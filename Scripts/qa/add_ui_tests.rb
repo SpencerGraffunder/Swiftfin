@@ -6,37 +6,36 @@
 
 require 'xcodeproj'
 require 'rexml/document'
-require 'fileutils'
 
 project_path = ARGV[0] || 'Swiftfin.xcodeproj'
 scheme_path  = File.join(project_path, 'xcshareddata', 'xcschemes', 'Swiftfin.xcscheme')
 tests_dir    = 'Tests/SwiftfinUITests'
+target_name  = 'SwiftfinUITests'
 
 project = Xcodeproj::Project.open(project_path)
 
-app_target = project.targets.find { |t| t.name == 'Swiftfin' } ||
-             abort("app target 'Swiftfin' not found")
+app_target = project.targets.find { |t| t.name == 'Swiftfin iOS' } ||
+             project.targets.find { |t| t.name == 'Swiftfin' } ||
+             abort("app target 'Swiftfin iOS' not found")
+app_product = app_target.product_reference.path || 'Swiftfin.app'
 
-target_name = 'SwiftfinUITests'
 existing = project.targets.find { |t| t.name == target_name }
 project.targets.delete(existing) if existing
 
 target = project.new_target(:ui_test_bundle, target_name, :ios, '16.4')
 
 # Sources
-group = project.main_group.find_subpath('Tests', true)
-group.find_subpath(target_name, true)
+tests_group = project.main_group.find_subpath('Tests', true)
 test_files = Dir.glob(File.join(tests_dir, '*.swift')).sort
 raise "no test sources under #{tests_dir}" if test_files.empty?
 
 test_files.each do |path|
-  rel = path.split('/').drop(1).join('/') # Tests/... relative to project root group
-  ref = group.files.find { |f| f.path&.end_with?(rel) } ||
-        group.new_reference(rel)
+  rel = path.split('/').drop(1).join('/') # relative to the Tests group
+  ref = tests_group.files.find { |f| f.path&.end_with?(rel) } ||
+        tests_group.new_reference(rel)
   target.source_build_phase.add_file_reference(ref)
 end
 
-# Dependency: build the app first
 target.add_dependency(app_target)
 
 target.build_configurations.each do |config|
@@ -57,43 +56,49 @@ project.save
 
 # --- Scheme wiring -----------------------------------------------------------
 doc = File.open(scheme_path) { |f| REXML::Document.new(f) }
+
+launch_ref = doc.root.elements['LaunchAction/BuildableProductRunnable/BuildableReference']
+raise 'scheme LaunchAction reference missing' unless launch_ref
+
 test_action = doc.root.elements['TestAction'] ||
-              doc.root.elements.add('TestAction',
-                                     'buildConfiguration' => 'Debug',
-                                     'selectedDebuggerIdentifier' => 'Xcode.DebuggerFoundation.Debugger.LLDB')
+              doc.root.elements.add_element('TestAction').tap do |el|
+                el.add_attribute('buildConfiguration', 'Debug')
+                el.add_attribute('selectedDebuggerIdentifier', 'Xcode.DebuggerFoundation.Debugger.LLDB')
+              end
 
-list = test_action.elements['Testables'] || test_action.elements.add('Testables')
+test_action.add_attribute('macroExpansion', 'primary')
+test_action.add_attribute('selectedLauncherIdentifier', 'Xcode.DebuggerFoundation.Launcher.LLDB')
+test_action.add_attribute('shouldUseLaunchSchemeArgsEnv', 'YES')
 
-# Drop stale reference if rerun
+list = test_action.elements['Testables'] || test_action.elements.add_element('Testables')
 list.delete(list.elements["TestableBuildableReference[@BlueprintName='#{target_name}']"])
 
-parent = doc.root.elements['TestAction']
-macro = test_action.attributes['macroExpansion']
-# MacroExpansion on the launch-action reference for the app
-app_ref = doc.root.elements['LaunchAction']&.elements&.[]('BuildableProductRunnable')&.elements&.[]('BuildableReference')
-
-ref_attrs = app_ref ? app_ref.attributes.each_attribute.to_h { |a| [a.name, a.value] } : {}
-ref_attrs.delete('BlueprintIdentifier')
-ref_attrs['BuildableIdentifier'] = 'primary'
-ref_attrs['BlueprintIdentifier'] = app_target.uuid
-ref_attrs['BuildableName'] = 'Swiftfin.app'
-ref_attrs['BlueprintName'] = app_target.name
-
 testable = list.add_element('TestableBuildableReference')
-ref_attrs.each { |k, v| testable.add_attribute(k, v) }
+testable.add_attribute('BuildableIdentifier', 'primary')
+testable.add_attribute('BlueprintIdentifier', app_target.uuid)
+testable.add_attribute('BlueprintName', app_target.name)
+testable.add_attribute('BuildableName', app_product)
+testable.add_attribute('ReferencedContainer', launch_ref.attributes['ReferencedContainer'])
 testable.add_attribute('Skipped', 'NO')
 testable.add_attribute('Parallelizable', 'NO')
-testable.add_attribute('PublishedReference', 'NO')
 
-test_action.add_attribute('macroExpansion', 'primary') unless test_action.attributes['macroExpansion']
-
-# Also patch LaunchAction to the same app target so the scheme remains launchable
-launch = doc.root.elements['LaunchAction']
-if launch && (bp = launch.elements['BuildableProductRunnable/BuildableReference'])
-  bp.add_attribute('BlueprintIdentifier', app_target.uuid)
-  bp.add_attribute('BuildableName', 'Swiftfin.app')
-  bp.add_attribute('BlueprintName', app_target.name)
+# The scheme must also build the test target: add a BuildEntry for it
+build_action = doc.root.elements['BuildAction']
+build_entries = build_action && build_action.elements['BuildActionEntries']
+if build_entries && !build_entries.elements["BuildableReference[@BlueprintName='#{target_name}']"]
+  entry = build_entries.add_element('BuildActionEntry')
+  entry.add_attribute('BuildForTesting', 'YES')
+  entry.add_attribute('BuildForRunning', 'NO')
+  entry.add_attribute('BuildForProfiling', 'NO')
+  entry.add_attribute('BuildForArchiving', 'NO')
+  entry.add_attribute('BuildForAnalyzing', 'NO')
+  ref = entry.add_element('BuildableReference')
+  ref.add_attribute('BuildableIdentifier', 'primary')
+  ref.add_attribute('BlueprintIdentifier', target.uuid)
+  ref.add_attribute('BuildableName', "#{target_name}.xctest")
+  ref.add_attribute('BlueprintName', target_name)
+  ref.add_attribute('ReferencedContainer', launch_ref.attributes['ReferencedContainer'])
 end
 
 File.open(scheme_path, 'w') { |f| doc.write(f, indent: 2) }
-puts "Added #{target_name} (#{test_files.size} sources) to #{project_path} and scheme"
+puts "Added #{target_name} (#{test_files.size} sources) to #{project_path}; host: #{app_target.name}"
