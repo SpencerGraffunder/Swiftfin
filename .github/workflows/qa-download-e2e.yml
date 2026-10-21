@@ -1,0 +1,103 @@
+name: QA Download E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: QA Jellyfin base URL
+        required: true
+        default: https://washington-sympathy-fitted-driven.trycloudflare.com
+      qa_user:
+        description: QA username
+        required: true
+        default: qaadmin
+      qa_pass:
+        description: QA password
+        required: true
+      sim_device:
+        description: Preferred simulator name
+        required: false
+        default: iPhone 16
+
+concurrency:
+  group: qa-download-e2e
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Download flow XCUITest
+    runs-on: macos-26
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+
+      - name: Install xcodeproj gem
+        run: gem install xcodeproj -N
+
+      - name: Add UI test target
+        run: ruby Scripts/qa/add_ui_tests.rb
+
+      - name: Resolve and boot simulator
+        run: |
+          echo "Available iPhone simulators:"
+          xcrun simctl list devices available | grep -E "iPhone" || true
+          RESOLVED=""
+          for name in "${{ inputs.sim_device }}" "iPhone 17 Pro" "iPhone 17" "iPhone 16 Pro" "iPhone 16" "iPhone 15"; do
+            UDID=$(xcrun simctl list devices available | grep -E "^[[:space:]]+${name} \(" | head -1 | grep -oE '[0-9A-F-]{36}' || true)
+            if [ -n "$UDID" ]; then RESOLVED="$name"; break; fi
+          done
+          if [ -z "$RESOLVED" ]; then echo "No usable iPhone simulator found"; exit 1; fi
+          echo "Using $RESOLVED ($UDID)"
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID" || true
+
+      - name: Build for testing
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -project Swiftfin.xcodeproj \
+            -scheme Swiftfin \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -derivedDataPath ./dd \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee build-for-testing.log
+
+      - name: Inject QA env into xctestrun
+        env:
+          QA_SERVER_URL: ${{ inputs.server_url }}
+          QA_USER: ${{ inputs.qa_user }}
+          QA_PASS: ${{ inputs.qa_pass }}
+        run: python3 Scripts/qa/inject_env.py
+
+      - name: Run tests
+        env:
+          QA_SERVER_URL: ${{ inputs.server_url }}
+          QA_USER: ${{ inputs.qa_user }}
+          QA_PASS: ${{ inputs.qa_pass }}
+        run: |
+          set -o pipefail
+          XCTRUN=$(ls dd/Build/Products/*-*.xctestrun)
+          xcodebuild test-without-building \
+            -xctestrun "$XCTRUN" \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -derivedDataPath ./dd \
+            -resultBundlePath ./qa.xcresult \
+            | tee test-run.log
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-download-e2e-results
+          path: |
+            qa.xcresult
+            test-run.log
+            build-for-testing.log
+          if-no-files-found: ignore
+          retention-days: 14
