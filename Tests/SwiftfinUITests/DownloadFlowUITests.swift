@@ -44,6 +44,15 @@ final class DownloadFlowUITests: XCTestCase {
         return false
     }
 
+    /// Last hittable element of a query (duplicate labels across bar + sheet).
+    private func lastHittable(_ query: XCUIElementQuery) -> XCUIElement? {
+        var chosen: XCUIElement?
+        for i in 0 ..< query.count where query.element(boundBy: i).isHittable {
+            chosen = query.element(boundBy: i)
+        }
+        return chosen
+    }
+
     // MARK: - Flow
 
     func test01ConnectSignInAndDownloadMovie() throws {
@@ -79,9 +88,10 @@ final class DownloadFlowUITests: XCTestCase {
         snap("04-credentials")
 
         if !tapIfExists(app.buttons["Connect"], timeout: 4) {
-            _ = tapIfExists(app.buttons["Sign In"], timeout: 3)
+            if !tapIfExists(app.buttons["Sign In"], timeout: 3) {
+                passField.typeText("\n")
+            }
         }
-        passField.typeText("\n")
         snap("05-signed-in")
 
         // Home: dismiss any chrome, then find Movies
@@ -114,16 +124,14 @@ final class DownloadFlowUITests: XCTestCase {
         downloadButton.tap()
         snap("09-download-menu")
 
-        let candidates = app.buttons["Download"].allMatchingElements.filter(\.isHittable)
-        XCTAssertFalse(candidates.isEmpty, "download start action missing from menu")
-        // The sheet action sits below the nav-bar trigger.
-        let startButton = candidates.max(by: { $0.frame.minY < $1.frame.minY })!
+        let startButton = try XCTUnwrap(lastHittable(app.buttons["Download"]),
+                                        "download start action missing from menu")
         startButton.tap()
         snap("10-download-started")
 
         // Button label must flip to an active state
         let pending = app.buttons.matching(
-            NSPredicate(format: "label IN %@ OR label CONTAINS[cd] 'ownload'", ["Downloading", "Queued", "Downloaded"])
+            NSPredicate(format: "label CONTAINS[cd] 'ownload'")
         ).firstMatch
         XCTAssertTrue(pending.waitForExistence(timeout: 30), "download button never entered an active state")
         snap("11-download-active")
@@ -164,8 +172,7 @@ final class DownloadFlowUITests: XCTestCase {
         let downloadButton = app.buttons["Download"]
         XCTAssertTrue(downloadButton.waitForExistence(timeout: 15), "download button missing on Big Movie")
         downloadButton.tap()
-        let candidates = app.buttons["Download"].allMatchingElements.filter(\.isHittable)
-        let startButton = candidates.max(by: { $0.frame.minY < $1.frame.minY })!
+        let startButton = try XCTUnwrap(lastHittable(app.buttons["Download"]), "no hittable Download start control")
         startButton.tap()
 
         // Re-open the menu: active download must offer Pause + Cancel (or Play if already done)
