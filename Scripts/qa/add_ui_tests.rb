@@ -43,7 +43,6 @@ target.build_configurations.each do |config|
   s = config.build_settings
   s['PRODUCT_BUNDLE_IDENTIFIER'] = "#{bundle_prefix}.SwiftfinUITests"
   s['TEST_TARGET_NAME'] = app_target.name
-  s['TEST_HOST'] = '$(BUILT_PRODUCTS_DIR)/Swiftfin.app/$(BUNDLE_LOADER_PATH)' if ios
   s['GENERATE_INFOPLIST_FILE'] = 'YES'
   s['SDKROOT'] = 'iphoneos'
   s['TARGETED_DEVICE_FAMILY'] = '1,2'
