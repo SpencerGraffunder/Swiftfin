@@ -13,22 +13,36 @@ import XCTest
 /// - `ConnectToServerView`: TextField "URL", Button "Connect" (disabled while URL empty)
 /// - `UserSignInView`: TextField "Username", SecureField "Password", Button "Sign in"
 /// - iOS tab bar: Home(contentGroup) / Search / Media / Downloads
-/// - Item detail: download button is a `Menu`; label "Download", then state menus
-///   with rows labeled exactly "Download" (start), "Pause", "Resume", "Cancel",
-///   "Retry", "Play", "Delete" (L10n.signIn -> "Sign in", lowercase i, etc.)
+/// - Item detail: download button is a `Menu` with label exactly "Download", then
+///   state labels "Downloading…" / "Downloaded" / "Download Paused" / "Download Failed"
+///   and menu rows labeled exactly "Download" (start), "Pause", "Resume", "Cancel",
+///   "Retry", "Play", "Delete".
+///
+/// Interaction rule: NEVER `app.buttons["X"].tap()` directly — SwiftUI glass buttons
+/// can double-expose the same control (and offscreen variants of the same label exist
+/// in form rows), which makes an ambiguous element's actions throw
+/// "Multiple matching elements". All taps go through `tapFirst`, which polls a scoped
+/// query and taps the first *hittable* match by index.
 final class DownloadFlowUITests: XCTestCase {
     private static let app = XCUIApplication()
+    private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
     /// QA server + account injected by Scripts/qa/inject_env.py from the CI job env.
-    /// Fallbacks must match the repo secrets QA_SERVER_URL / QA_USER / QA_PASSWORD
-    /// (the dedicated `qa` account, NOT the admin).
+    /// Fallbacks must match the workflow dispatch inputs (dedicated QA container,
+    /// NOT the family server).
     private let serverURL = ProcessInfo.processInfo.environment["QA_SERVER_URL"] ?? "http://192.168.4.200:8096"
-    private let username = ProcessInfo.processInfo.environment["QA_USER"] ?? "qa"
+    private let username = ProcessInfo.processInfo.environment["QA_USER"] ?? "qaadmin"
     private let password = ProcessInfo.processInfo.environment["QA_PASS"]
         ?? ProcessInfo.processInfo.environment["QA_PASSWORD"] ?? ""
 
     /// The small (~4 MB) ffmpeg-generated movie. test01 downloads it to completion.
     private let smallMovieTitle = "QA Movie"
+
+    /// Matches the item-detail download action in any of its states while excluding
+    /// the Downloads *tab* ("Downloads") and the idle action ("Download") itself.
+    private static let barStatePredicate = NSPredicate(
+        format: "label CONTAINS[cd] 'download' AND label != 'Download' AND label != 'Downloads'"
+    )
 
     @MainActor
     override func setUpWithError() throws {
@@ -49,16 +63,67 @@ final class DownloadFlowUITests: XCTestCase {
         add(attachment)
     }
 
-    /// Flips the first-run disclaimer if present.
-    private func acceptDisclaimerIfNeeded(_ app: XCUIApplication) {
-        let continueButton = app.buttons["Continue"]
-        if continueButton.waitForExistence(timeout: 3) { continueButton.tap() }
+    // MARK: - Interaction helpers
+
+    /// Taps the first hittable element of `query`, polling until `timeout`.
+    /// Immune to ambiguous-label duplicates (index resolution + hittable filter).
+    @discardableResult
+    private func tapFirst(_ query: XCUIElementQuery, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            let count = query.count
+            for i in 0 ..< count {
+                let el = query.element(boundBy: i)
+                if el.isHittable {
+                    el.tap()
+                    return true
+                }
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        } while Date() < deadline
+        return false
     }
 
-    private func tapIfExists(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
-        guard element.waitForExistence(timeout: timeout) else { return false }
-        element.tap()
-        return true
+    /// Convenience: exact-label button tap.
+    @discardableResult
+    private func tapButton(_ collection: XCUIElementQuery, _ label: String, timeout: TimeInterval) -> Bool {
+        tapFirst(collection.matching(NSPredicate(format: "label == %@", label)), timeout: timeout)
+    }
+
+    /// Picks the LAST hittable match: for an open menu whose rows share the bar
+    /// button's label, the menu window is later in the element tree (and the bar
+    /// behind the menu is not hittable).
+    private func lastHittable(_ query: XCUIElementQuery) -> XCUIElement? {
+        for i in stride(from: query.count - 1, through: 0, by: -1) {
+            let el = query.element(boundBy: i)
+            if el.isHittable { return el }
+        }
+        return nil
+    }
+
+    private func exists(_ query: XCUIElementQuery, timeout: TimeInterval) -> Bool {
+        query.firstMatch.waitForExistence(timeout: timeout)
+    }
+
+    /// Flips the first-run disclaimer if present.
+    private func acceptDisclaimerIfNeeded(_ app: XCUIApplication) {
+        _ = tapButton(app.buttons, "Continue", timeout: 3)
+    }
+
+    private func dismissChrome(_ app: XCUIApplication) {
+        dismissSystemAlert()
+        for label in ["OK", "Allow", "Later", "No Thanks"] {
+            _ = tapButton(app.buttons, label, timeout: 2)
+        }
+    }
+
+    /// Taps the button of a system permission alert (local-network discovery etc.)
+    /// if one is up. Those live in SpringBoard, not the app's own element tree.
+    private func dismissSystemAlert() {
+        for label in ["Allow", "OK", "Later", "Don’t Allow"] {
+            let b = springboard.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
+            if b.waitForExistence(timeout: 0.5) { b.tap(); return }
+        }
     }
 
     /// Signs in (first run only). Swiftfin's launch sequence is
@@ -70,35 +135,38 @@ final class DownloadFlowUITests: XCTestCase {
         dismissChrome(app)
 
         // Already signed in from an earlier test? The tab bar is the tell.
-        if app.tabBars.buttons["Downloads"].waitForExistence(timeout: 15) { return }
+        if exists(app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads'")), timeout: 15) { return }
 
-        // Zero saved servers -> ConnectToJellyfinView with a single "Connect" CTA.
-        if !tapIfExists(app.buttons["Connect"], timeout: 30) {
+        // Zero saved servers -> ConnectToJellyfinView with a "Connect" CTA.
+        if !tapButton(app.buttons, "Connect", timeout: 30) {
             // Servers exist but no user signed in: the sign-in screen should already
             // be visible; as a backstop try the Advanced/gear menu's Add-server entry.
-            if !app.textFields["Username"].waitForExistence(timeout: 8) {
-                tapIfExists(app.buttons["Advanced"], timeout: 5)
-                tapIfExists(app.buttons["Add server"], timeout: 5)
+            if !exists(app.textFields.matching(NSPredicate(format: "label == 'Username'")), timeout: 8) {
+                _ = tapButton(app.buttons, "Advanced", timeout: 5)
+                _ = tapButton(app.buttons, "Add server", timeout: 5)
             }
         }
+        // Connecting triggers Bonjour discovery -> the local-network permission
+        // alert can land over the add-server form; clear it before interacting.
+        dismissSystemAlert()
         snap("01-connect-screen")
 
-        let urlField = app.textFields["URL"]
+        let urlField = app.textFields.matching(NSPredicate(format: "label == 'URL'")).firstMatch
         XCTAssertTrue(
             urlField.waitForExistence(timeout: 15),
             "URL field never appeared on the add-server form"
         )
         urlField.tap()
         urlField.typeText(serverURL)
-        tapIfExists(app.keyboards.buttons["Return"], timeout: 3) // hide keyboard
+        _ = tapFirst(app.keyboards.buttons.matching(NSPredicate(format: "label == 'Return'")), timeout: 3)
 
         XCTAssertTrue(
-            tapIfExists(app.buttons["Connect"], timeout: 10),
+            tapButton(app.buttons, "Connect", timeout: 10),
             "no Connect button on the add-server form"
         )
         snap("02-server-connected")
 
-        let userField = app.textFields["Username"]
+        let userField = app.textFields.matching(NSPredicate(format: "label == 'Username'")).firstMatch
         XCTAssertTrue(
             userField.waitForExistence(timeout: 25),
             "user sign-in screen never appeared after connecting to the server"
@@ -106,19 +174,19 @@ final class DownloadFlowUITests: XCTestCase {
         userField.tap()
         userField.typeText(username)
 
-        let passField = app.secureTextFields["Password"]
+        let passField = app.secureTextFields.matching(NSPredicate(format: "label == 'Password'")).firstMatch
         XCTAssertTrue(passField.waitForExistence(timeout: 10), "password field missing")
         passField.tap()
         passField.typeText(password)
-        tapIfExists(app.keyboards.buttons["Return"], timeout: 3)
+        _ = tapFirst(app.keyboards.buttons.matching(NSPredicate(format: "label == 'Return'")), timeout: 3)
 
         XCTAssertTrue(
-            tapIfExists(app.buttons["Sign in"], timeout: 10),
+            tapButton(app.buttons, "Sign in", timeout: 10),
             "no Sign in button on the sign-in screen"
         )
         dismissChrome(app)
         XCTAssertTrue(
-            app.tabBars.buttons["Downloads"].waitForExistence(timeout: 30),
+            exists(app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads'")), timeout: 30),
             "download feature off or tab missing after sign-in"
         )
         snap("03-signed-in")
@@ -127,7 +195,7 @@ final class DownloadFlowUITests: XCTestCase {
     /// Deterministic navigation to an item's detail page via the Search tab
     /// (home shelves are personalized/paginated and unreliable in CI).
     private func openItemViaSearch(_ app: XCUIApplication, title: String) throws {
-        let searchTab = app.tabBars.buttons["Search"]
+        let searchTab = app.tabBars.buttons.matching(NSPredicate(format: "label == 'Search'")).firstMatch
         XCTAssertTrue(searchTab.waitForExistence(timeout: 25), "Search tab missing")
         searchTab.tap()
 
@@ -135,7 +203,7 @@ final class DownloadFlowUITests: XCTestCase {
         XCTAssertTrue(searchField.waitForExistence(timeout: 10), "search field missing")
         searchField.tap()
         searchField.typeText(title)
-        tapIfExists(app.keyboards.buttons["Return"], timeout: 3)
+        _ = tapFirst(app.keyboards.buttons.matching(NSPredicate(format: "label == 'Return'")), timeout: 3)
         snap("10-search-\(title.replacingOccurrences(of: " ", with: "-"))")
 
         let pred = NSPredicate(format: "label CONTAINS[cd] %@", title)
@@ -149,9 +217,10 @@ final class DownloadFlowUITests: XCTestCase {
         }
         let found = try XCTUnwrap(result, "no search result matching '\(title)'")
         found.tapWithRetry()
+        let downloadIdle = app.buttons.matching(NSPredicate(format: "label == 'Download'"))
         XCTAssertTrue(
-            app.buttons["Download"].waitForExistence(timeout: 20) ||
-                app.buttons.matching(NSPredicate(format: "label CONTAINS[cd] 'download'")).firstMatch.waitForExistence(timeout: 10),
+            downloadIdle.firstMatch.waitForExistence(timeout: 20)
+                || exists(app.buttons.matching(Self.barStatePredicate), timeout: 10),
             "item detail for '\(title)' missing the download action"
         )
     }
@@ -163,6 +232,16 @@ final class DownloadFlowUITests: XCTestCase {
         snap("11-item-detail")
     }
 
+    /// The item-detail download action in its IDLE state (exact "Download" label).
+    private var idleDownloadQuery: XCUIElementQuery {
+        Self.app.buttons.matching(NSPredicate(format: "label == 'Download'"))
+    }
+
+    /// The item-detail download action in any ACTIVE/terminal state.
+    private var stateDownloadQuery: XCUIElementQuery {
+        Self.app.buttons.matching(Self.barStatePredicate)
+    }
+
     // MARK: - Tests
 
     func test01ConnectSignInAndDownloadMovie() throws {
@@ -171,46 +250,44 @@ final class DownloadFlowUITests: XCTestCase {
 
         try openSmallMovie(app)
 
-        // 1. The download button is visible in the primary action row and enabled.
-        let downloadButton = app.buttons["Download"]
-        XCTAssertTrue(downloadButton.waitForExistence(timeout: 15), "download button missing on item detail")
-        XCTAssertTrue(downloadButton.isHittable, "download button not tappable")
+        // 1. The download button is visible in the primary action row and tappable.
+        XCTAssertTrue(idleDownloadQuery.firstMatch.waitForExistence(timeout: 15), "download button missing on item detail")
+        XCTAssertTrue(tapFirst(idleDownloadQuery, timeout: 10), "download button not tappable")
 
-        // 2. Tapping it opens the start menu (bitrate picker + Download row).
-        downloadButton.tap()
+        // 2. The opened menu must offer a Download start row (bar + row share the
+        // label; the menu row is the last hittable one).
         let startButton = try XCTUnwrap(
-            lastHittable(app.buttons.matching(NSPredicate(format: "label == 'Download'"))),
+            lastHittable(idleDownloadQuery),
             "download menu did not offer a Download start row"
         )
         snap("12-download-menu")
         startButton.tap()
 
-        // 3. The action must flip into a state label immediately (queued/progress).
-        let stateLabel = app.buttons.matching(
-            NSPredicate(format: "label CONTAINS[cd] 'download' AND label != 'Download'")
-        ).firstMatch
-        XCTAssertTrue(stateLabel.waitForExistence(timeout: 30), "download never entered a progress/queued state")
+        // 3. The action must flip into a state label (queued/progress), excluding
+        // the Downloads tab label.
+        XCTAssertTrue(
+            stateDownloadQuery.firstMatch.waitForExistence(timeout: 30),
+            "download never entered a progress/queued state"
+        )
         snap("13-download-started")
 
         // 4. Poll until the action settles: completed (or failed — which must
         // fail the test explicitly rather than time out opaque).
-        let completed = app.buttons.matching(
-            NSPredicate(format: "label CONTAINS[cd] 'downloaded'")
-        ).firstMatch
+        let completed = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[cd] 'downloaded'")).firstMatch
+        let failed = app.buttons.matching(NSPredicate(format: "label CONTAINS[cd] 'download failed'")).firstMatch
         let deadline = Date().addingTimeInterval(300)
         var settled = false
         while Date() < deadline {
-            if completed.exists || !stateLabel.exists { settled = true; break }
+            if completed.exists || failed.exists || !stateDownloadQuery.firstMatch.exists { settled = true; break }
             RunLoop.current.run(until: Date().addingTimeInterval(2))
         }
         XCTAssertTrue(settled, "download did not settle within 5 minutes")
-        XCTAssertFalse(
-            app.buttons.matching(NSPredicate(format: "label CONTAINS[cd] 'download failed'")).firstMatch.exists,
-            "download FAILED"
-        )
+        XCTAssertFalse(failed.exists, "download FAILED")
+        XCTAssertTrue(completed.exists, "download settled but never reached the Downloaded state")
+        snap("14-download-complete")
 
         // 5. Downloads tab lists the item as downloaded.
-        let downloadsTab = app.tabBars.buttons["Downloads"]
+        let downloadsTab = app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads'")).firstMatch
         XCTAssertTrue(downloadsTab.waitForExistence(timeout: 10), "Downloads tab missing")
         downloadsTab.tap()
         let row = app.cells.matching(
@@ -218,7 +295,7 @@ final class DownloadFlowUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 30), "downloaded item missing from Downloads tab")
         XCTAssertTrue(row.label.lowercased().contains("download"), "row shows no state label: \(row.label)")
-        snap("14-downloads-tab")
+        snap("15-downloads-tab")
     }
 
     func test02PauseCancelStateMachine() throws {
@@ -227,54 +304,56 @@ final class DownloadFlowUITests: XCTestCase {
         dismissChrome(app)
         try openItemViaSearch(app, title: "QA Big Movie")
 
-        let downloadButton = app.buttons["Download"]
-        XCTAssertTrue(downloadButton.waitForExistence(timeout: 15), "download button missing on Big Movie")
-        downloadButton.tap()
+        XCTAssertTrue(tapFirst(idleDownloadQuery, timeout: 15), "download button missing/unhittable on Big Movie")
         let startButton = try XCTUnwrap(
-            lastHittable(app.buttons.matching(NSPredicate(format: "label == 'Download'"))),
+            lastHittable(idleDownloadQuery),
             "no hittable Download start row in menu"
         )
         startButton.tap()
 
-        // Re-open the menu: active download must offer Pause (or Play if it already
-        // completed — the tunnel is fast enough to beat the round trip on flaky days).
-        XCTAssertTrue(downloadButton.waitForExistence(timeout: 20))
-        downloadButton.tap()
-        let pauseItem = app.buttons["Pause"].firstMatch
-        let playItem = app.buttons["Play"].firstMatch
-        if pauseItem.waitForExistence(timeout: 8) {
-            pauseItem.tap()
+        // Re-open the menu: the bar now shows an active state label ("Downloading…"
+        // / "Download Paused" / "Downloaded"), NOT the idle "Download" label.
+        let activeDownload = stateDownloadQuery
+        XCTAssertTrue(activeDownload.firstMatch.waitForExistence(timeout: 20), "bar never showed a download state")
+        XCTAssertTrue(tapFirst(activeDownload, timeout: 10), "download state label not tappable")
+
+        let pauseRow = app.buttons.matching(NSPredicate(format: "label == 'Pause'"))
+        let playRow = app.buttons.matching(NSPredicate(format: "label == 'Play'"))
+        if pauseRow.firstMatch.waitForExistence(timeout: 8) {
+            XCTAssertTrue(tapFirst(pauseRow, timeout: 8), "Pause row not tappable")
             let pausedLabel = app.buttons.matching(
                 NSPredicate(format: "label CONTAINS[cd] 'download paused'")
             ).firstMatch
             XCTAssertTrue(pausedLabel.waitForExistence(timeout: 20), "label did not become Download Paused")
             snap("20-paused")
 
-            downloadButton.tap()
-            if app.buttons["Resume"].firstMatch.waitForExistence(timeout: 5) {
-                app.buttons["Resume"].firstMatch.tap()
-            }
+            XCTAssertTrue(tapFirst(activeDownload, timeout: 10))
+            _ = tapFirst(app.buttons.matching(NSPredicate(format: "label == 'Resume'")), timeout: 5)
             snap("21-resumed")
-            downloadButton.tap()
-        } else if playItem.waitForExistence(timeout: 3) {
+            _ = tapFirst(activeDownload, timeout: 10)
+        } else if playRow.firstMatch.waitForExistence(timeout: 3) {
             // Completed already: completed menu must show Play + Delete.
-            XCTAssertTrue(app.buttons["Delete"].firstMatch.waitForExistence(timeout: 5),
+            XCTAssertTrue(playRow.firstMatch.isHittable, "completed menu Play row not hittable")
+            XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label == 'Delete'")).firstMatch.waitForExistence(timeout: 5),
                           "completed menu missing Delete")
             snap("20-completed-menu")
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
             return
+        } else {
+            XCTFail("active download menu offered neither Pause nor Play")
         }
 
-        // Cancel from whatever state we are in now.
-        XCTAssertTrue(downloadButton.waitForExistence(timeout: 10))
-        downloadButton.tap()
-        let cancel = app.buttons["Cancel"].firstMatch
-        XCTAssertTrue(cancel.waitForExistence(timeout: 8), "menu missing Cancel action")
-        cancel.tap()
+        // Cancel from whatever state we are in now (menu may already be open from
+        // the resume step; the resume step re-opened it).
+        if !app.buttons.matching(NSPredicate(format: "label == 'Cancel'")).firstMatch.exists {
+            XCTAssertTrue(tapFirst(activeDownload, timeout: 10), "download state label not re-tappable")
+        }
+        let cancel = app.buttons.matching(NSPredicate(format: "label == 'Cancel'"))
+        XCTAssertTrue(tapFirst(cancel, timeout: 8), "menu missing Cancel action")
         snap("22-cancelled")
 
         // The Downloads tab must no longer list the cancelled download.
-        tapIfExists(app.tabBars.buttons["Downloads"], timeout: 10)
+        _ = tapFirst(app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads'")), timeout: 10)
         let stillThere = app.cells.matching(
             NSPredicate(format: "label CONTAINS[cd] 'QA Big Movie'")
         ).firstMatch.waitForExistence(timeout: 5)
@@ -287,7 +366,7 @@ final class DownloadFlowUITests: XCTestCase {
         try signInIfNeeded(app)
         dismissChrome(app)
 
-        let downloadsTab = app.tabBars.buttons["Downloads"]
+        let downloadsTab = app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads'")).firstMatch
         XCTAssertTrue(downloadsTab.waitForExistence(timeout: 25), "Downloads tab missing")
         downloadsTab.tap()
 
@@ -295,11 +374,11 @@ final class DownloadFlowUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS[cd] 'QA Movie' AND label CONTAINS[cd] 'downloaded'")
         ).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 30), "completed download missing from Downloads tab")
-        row.tap()
+        row.tapWithRetry()
         snap("14-offline-detail")
 
         let detailDownload = app.buttons.matching(
-            NSPredicate(format: "label CONTAINS[cd] 'downloaded'")
+            NSPredicate(format: "label BEGINSWITH[cd] 'downloaded'")
         ).firstMatch
         XCTAssertTrue(detailDownload.waitForExistence(timeout: 15), "detail action not in downloaded state")
         snap("15-offline-state")
@@ -309,23 +388,6 @@ final class DownloadFlowUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(play.waitForExistence(timeout: 15), "play control missing on offline item")
         snap("16-offline-play-ready")
-    }
-
-    // MARK: - Helpers
-
-    private func lastHittable(_ query: XCUIElementQuery) -> XCUIElement? {
-        for i in stride(from: query.count - 1, through: 0, by: -1) {
-            let el = query.element(boundBy: i)
-            if el.exists, el.isHittable { return el }
-        }
-        return nil
-    }
-
-    private func dismissChrome(_ app: XCUIApplication) {
-        tapIfExists(app.buttons["OK"], timeout: 3)
-        tapIfExists(app.buttons["Allow"], timeout: 3)
-        tapIfExists(app.buttons["Later"], timeout: 2)
-        tapIfExists(app.buttons["No Thanks"], timeout: 2)
     }
 }
 
