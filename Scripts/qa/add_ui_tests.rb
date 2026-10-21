@@ -49,6 +49,7 @@ target.build_configurations.each do |config|
   s['CODE_SIGNING_REQUIRED'] = 'NO'
   s['CODE_SIGN_IDENTITY'] = ''
   s['IPHONEOS_DEPLOYMENT_TARGET'] = '16.4'
+  s['SWIFT_VERSION'] = '5.0'
   s['SUPPORTS_MACCATALYST'] = 'NO'
 end
 
