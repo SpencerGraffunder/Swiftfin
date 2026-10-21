@@ -105,22 +105,6 @@ final class DownloadFlowUITests: XCTestCase {
         query.firstMatch.waitForExistence(timeout: timeout)
     }
 
-    /// Finds a text field by visible title. A SwiftUI `TextField`/`SecureField`
-    /// in a Form row exposes its title ONLY as `placeholderValue` while the field
-    /// is empty — `label` stays empty — so `label == 'URL'` matches nothing
-    /// (observed CI failure: "URL field never appeared" with the field on screen).
-    /// Match label OR placeholderValue, case-insensitive contains.
-    private func findField(in collection: XCUIElementQuery, title: String, timeout: TimeInterval) -> XCUIElement? {
-        let pred = NSPredicate(format: "label CONTAINS[cd] %@ OR placeholderValue CONTAINS[cd] %@", title, title)
-        let query = collection.matching(pred)
-        let deadline = Date().addingTimeInterval(timeout)
-        repeat {
-            if query.count > 0 { return query.element(boundBy: 0) }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-        } while Date() < deadline
-        return nil
-    }
-
     /// Flips the first-run disclaimer if present.
     private func acceptDisclaimerIfNeeded(_ app: XCUIApplication) {
         _ = tapButton(app.buttons, "Continue", timeout: 3)
@@ -143,6 +127,69 @@ final class DownloadFlowUITests: XCTestCase {
         }
     }
 
+    /// Finds a text field by visible title. A SwiftUI `TextField`/`SecureField`
+    /// in a Form row exposes its title ONLY as `placeholderValue` while the field
+    /// is empty — `label` stays empty — so `label == 'URL'` matches nothing
+    /// (observed CI failure: "URL field never appeared" with the field on screen).
+    /// Prefers a visible named field; falls back to the only visible field.
+    private func findField(in collection: XCUIElementQuery, title: String, timeout: TimeInterval) -> XCUIElement? {
+        let named = collection.matching(NSPredicate(
+            format: "visible == 1 AND (label CONTAINS[cd] %@ OR placeholderValue CONTAINS[cd] %@)", title, title
+        ))
+        let anyVisible = collection.matching(NSPredicate(format: "visible == 1"))
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if named.count > 0 { return named.element(boundBy: 0) }
+            if title.isEmpty, anyVisible.count > 0 { return anyVisible.element(boundBy: 0) }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        } while Date() < deadline
+        // Nothing matched by name — if exactly one visible field exists, take it.
+        return anyVisible.count == 1 ? anyVisible.element(boundBy: 0) : nil
+    }
+
+    /// Dumps the raw element labels to the test log so selector mismatches are
+    /// diagnosable from CI output alone.
+    private func dumpTree(_ tag: String) {
+        let app = Self.app
+        print("### TREE[\(tag)] buttons:")
+        for el in app.buttons.allElementsBoundByIndex {
+            print("###   button label='\(el.label)' id='\(el.identifier)' enabled=\(el.isEnabled) hittable=\(el.isHittable)")
+        }
+        print("### TREE[\(tag)] textFields:")
+        for el in app.textFields.allElementsBoundByIndex {
+            print("###   textField label='\(el.label)' value='\(String(describing: el.value))' id='\(el.identifier)'")
+        }
+        print("### TREE[\(tag)] secureTextFields:")
+        for el in app.secureTextFields.allElementsBoundByIndex {
+            print("###   secureField label='\(el.label)' id='\(el.identifier)'")
+        }
+        print("### TREE[\(tag)] staticTexts: \(app.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " | "))")
+    }
+
+    /// Taps EVERY hittable element matching `label` (once each) until an element of
+    /// `indicator` shows up. Guards against SwiftUI glass duplicates where one of
+    /// two same-labeled elements is a non-functional ghost.
+    @discardableResult
+    private func tapUntil(_ app: XCUIApplication, label: String, indicator: XCUIElementQuery, timeout: TimeInterval) -> Bool {
+        let cta = app.buttons.matching(NSPredicate(format: "label == %@ AND visible == 1", label))
+        var tried = Set<Int>()
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if indicator.firstMatch.exists { return true }
+            let count = cta.count
+            for i in 0 ..< count where !tried.contains(i) {
+                let el = cta.element(boundBy: i)
+                guard el.isHittable else { tried.insert(i); continue }
+                tried.insert(i)
+                el.tap()
+                RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+                if indicator.firstMatch.exists { return true }
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        } while Date() < deadline
+        return indicator.firstMatch.exists
+    }
+
     /// Signs in (first run only). Swiftfin's launch sequence is
     /// disclaimer -> server list -> add-server form -> user sign-in -> tab bar.
     /// When the app is already signed in (state persisted from a previous test in
@@ -154,54 +201,70 @@ final class DownloadFlowUITests: XCTestCase {
         // Already signed in from an earlier test? The tab bar is the tell.
         if exists(app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads'")), timeout: 15) { return }
 
+        // Section header of the add-server form.
+        let formHeader = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[cd] 'connect to server'"))
+        // "Sign in to <server>" line on the user sign-in screen.
+        let signInHeader = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[cd] 'sign in to'"))
+
         // Zero saved servers -> ConnectToJellyfinView with a "Connect" CTA.
-        if !tapButton(app.buttons, "Connect", timeout: 30) {
-            // Servers exist but no user signed in: the sign-in screen should already
-            // be visible; as a backstop try the Advanced/gear menu's Add-server entry.
-            if findField(in: app.textFields, title: "Username", timeout: 8) == nil {
-                _ = tapButton(app.buttons, "Advanced", timeout: 5)
-                _ = tapButton(app.buttons, "Add server", timeout: 5)
-            }
+        // Tap until the form actually opens (glass ghosts can swallow taps).
+        if !tapUntil(app, label: "Connect", indicator: formHeader, timeout: 30),
+           !signInHeader.firstMatch.exists
+        {
+            // As a backstop try the Advanced/gear menu's Add-server entry.
+            _ = tapButton(app.buttons, "Advanced", timeout: 5)
+            _ = tapUntil(app, label: "Add server", indicator: formHeader, timeout: 10)
         }
         // Connecting triggers Bonjour discovery -> the local-network permission
         // alert can land over the add-server form; clear it before interacting.
         dismissSystemAlert()
         snap("01-connect-screen")
 
-        guard let urlField = findField(in: app.textFields, title: "URL", timeout: 15) else {
-            snap("01b-url-field-missing")
-            return XCTFail("URL field never appeared on the add-server form")
-        }
-        urlField.tap()
-        // The very first keyboard on a fresh simulator triggers the iOS
-        // "slide to type" onboarding tip (a SpringBoard overlay with a
-        // "Continue" button) that covers the keyboard area.
-        dismissSystemAlert()
-        urlField.typeText(serverURL)
-        if (urlField.value as? String)?.contains(serverURL) != true {
-            // The tip or a focus hiccup ate the first input pass — retry once.
+        if formHeader.firstMatch.exists {
+            guard let urlField = findField(in: app.textFields, title: "URL", timeout: 15) else {
+                dumpTree("add-server-form")
+                XCTAssertFalse(true, "no URL field on the add-server form")
+                return
+            }
             urlField.tap()
+            // The very first keyboard on a fresh simulator triggers the iOS
+            // "slide to type" onboarding tip that covers the keyboard area.
             dismissSystemAlert()
             urlField.typeText(serverURL)
-        }
-        _ = tapFirst(app.keyboards.buttons.matching(NSPredicate(format: "label == 'Return'")), timeout: 3)
+            if (urlField.value as? String)?.contains(serverURL) != true {
+                // The tip or a focus hiccup ate the first input pass — retry once.
+                urlField.tap()
+                dismissSystemAlert()
+                urlField.typeText(serverURL)
+            }
+            _ = tapFirst(app.keyboards.buttons.matching(NSPredicate(format: "label == 'Return'")), timeout: 3)
 
-        XCTAssertTrue(
-            tapButton(app.buttons, "Connect", timeout: 10),
-            "no Connect button on the add-server form"
-        )
+            if !tapUntil(app, label: "Connect", indicator: signInHeader, timeout: 15) {
+                dumpTree("after-connect")
+                XCTAssertFalse(true, "connecting to '\(serverURL)' never reached the user sign-in screen")
+            }
+        } else if !signInHeader.firstMatch.waitForExistence(timeout: 5) {
+            dumpTree("after-cta")
+            XCTAssertFalse(true, "never reached the add-server form or sign-in screen")
+        }
         snap("02-server-connected")
 
         guard let userField = findField(in: app.textFields, title: "Username", timeout: 25) else {
-            snap("02b-signin-screen")
-            return XCTFail("user sign-in screen never appeared after connecting to the server")
+            dumpTree("sign-in-screen")
+            XCTAssertFalse(true, "user sign-in username field missing")
+            return
         }
         userField.tap()
         userField.typeText(username)
+        if (userField.value as? String)?.contains(username) != true {
+            userField.tap()
+            userField.typeText(username)
+        }
 
         guard let passField = findField(in: app.secureTextFields, title: "Password", timeout: 10) else {
-            snap("02c-password-missing")
-            return XCTFail("password field missing")
+            dumpTree("password-field")
+            XCTAssertFalse(true, "password field missing")
+            return
         }
         passField.tap()
         passField.typeText(password)
@@ -212,10 +275,11 @@ final class DownloadFlowUITests: XCTestCase {
             "no Sign in button on the sign-in screen"
         )
         dismissChrome(app)
-        XCTAssertTrue(
-            exists(app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads'")), timeout: 30),
-            "download feature off or tab missing after sign-in"
-        )
+        let signedIn = exists(app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads'")), timeout: 30)
+        if !signedIn {
+            dumpTree("sign-in-failed")
+            XCTAssertFalse(true, "download feature off or tab missing after sign-in")
+        }
         snap("03-signed-in")
     }
 
@@ -367,7 +431,7 @@ final class DownloadFlowUITests: XCTestCase {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
             return
         } else {
-            XCTFail("active download menu offered neither Pause nor Play")
+            XCTAssertFalse(true, "active download menu offered neither Pause nor Play")
         }
 
         // Cancel from whatever state we are in now (menu may already be open from
