@@ -44,16 +44,6 @@ struct DownloadOptions: Codable, Hashable, Sendable {
     var bitrate: PlaybackBitrate
     var mediaSourceID: String?
 
-    init(
-        method: Method,
-        bitrate: PlaybackBitrate,
-        mediaSourceID: String?
-    ) {
-        self.method = method
-        self.bitrate = bitrate
-        self.mediaSourceID = mediaSourceID
-    }
-
     /// A direct-play / direct-stream download of the item's first playable
     /// media source.
     static func direct(_ item: BaseItemDto) -> DownloadOptions {

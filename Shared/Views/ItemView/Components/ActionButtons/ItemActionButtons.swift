@@ -89,24 +89,33 @@ struct ItemActionButtons: View {
         switch button {
         case .played:
             provider.item.canBePlayed
+
         case .favorited:
             provider.item.canBeFavorited
+
         case .trailers:
             hasTrailers(for: provider, enabledTrailers: enabledTrailers)
+
         case .playback:
             provider.item.presentPlayButton && provider.mediaPlayerItemProvider?.mediaSource != nil
+
         case .record:
             provider.item.canBeRecorded
+
         case .refresh:
             provider.item.canEditMetadata
+
         case .subtitles:
             provider.item.canEditSubtitles
+
         case .delete:
             provider.item.canDelete == true
+
         case .download:
             Defaults[.Experimental.downloads]
                 && provider.item.canBePlayed
                 && provider.item.mediaSources?.isEmpty == false
+
         #if os(iOS)
         case .editMetadata:
             provider.item.canEditMetadata
