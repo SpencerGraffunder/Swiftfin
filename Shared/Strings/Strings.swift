@@ -608,8 +608,20 @@ internal enum L10n {
   internal static let doubleTouch = L10n.tr("Localizable", "doubleTouch", fallback: "Double touch")
   /// Download
   internal static let download = L10n.tr("Localizable", "download", fallback: "Download")
+  /// Downloaded
+  internal static let downloaded = L10n.tr("Localizable", "downloaded", fallback: "Downloaded")
+  /// Download Failed
+  internal static let downloadFailed = L10n.tr("Localizable", "downloadFailed", fallback: "Download Failed")
+  /// Downloading…
+  internal static let downloading = L10n.tr("Localizable", "downloading", fallback: "Downloading…")
+  /// Download Options
+  internal static let downloadOptions = L10n.tr("Localizable", "downloadOptions", fallback: "Download Options")
+  /// Download Paused
+  internal static let downloadPaused = L10n.tr("Localizable", "downloadPaused", fallback: "Download Paused")
   /// Downloads
   internal static let downloads = L10n.tr("Localizable", "downloads", fallback: "Downloads")
+  /// Items you download will appear here so you can play them offline.
+  internal static let downloadsEmptySubtitle = L10n.tr("Localizable", "downloadsEmptySubtitle", fallback: "Items you download will appear here so you can play them offline.")
   /// Dropped frames
   internal static let droppedFrames = L10n.tr("Localizable", "droppedFrames", fallback: "Dropped frames")
   /// This saves the URL as another connection for the existing server and makes it active.
@@ -1134,6 +1146,8 @@ internal enum L10n {
   internal static let noActivity = L10n.tr("Localizable", "noActivity", fallback: "No activity")
   /// No profiles defined. Playback issues may occur.
   internal static let noDeviceProfileWarning = L10n.tr("Localizable", "noDeviceProfileWarning", fallback: "No profiles defined. Playback issues may occur.")
+  /// No Downloads
+  internal static let noDownloads = L10n.tr("Localizable", "noDownloads", fallback: "No Downloads")
   /// No episodes available
   internal static let noEpisodesAvailable = L10n.tr("Localizable", "noEpisodesAvailable", fallback: "No episodes available")
   /// No items
@@ -1852,6 +1866,8 @@ internal enum L10n {
   internal static let trailingValue = L10n.tr("Localizable", "trailingValue", fallback: "Trailing value")
   /// Transcode
   internal static let transcode = L10n.tr("Localizable", "transcode", fallback: "Transcode")
+  /// Transcoded
+  internal static let transcoded = L10n.tr("Localizable", "transcoded", fallback: "Transcoded")
   /// Transcode progress
   internal static let transcodeProgress = L10n.tr("Localizable", "transcodeProgress", fallback: "Transcode progress")
   /// Transcode reason(s)

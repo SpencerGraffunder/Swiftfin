@@ -37,14 +37,18 @@ final class DownloadFlowUITests: XCTestCase {
 
     /// QA server + account injected by Scripts/qa/inject_env.py from the CI job env.
     /// Fallbacks must match the workflow dispatch inputs (dedicated QA container,
-    /// NOT the family server).
+    /// family server with a STANDARD user account, user-authorized 2026-10-21).
     private let serverURL = ProcessInfo.processInfo.environment["QA_SERVER_URL"] ?? "http://192.168.4.200:8096"
     private let username = ProcessInfo.processInfo.environment["QA_USER"] ?? "qaadmin"
     private let password = ProcessInfo.processInfo.environment["QA_PASS"]
         ?? ProcessInfo.processInfo.environment["QA_PASSWORD"] ?? ""
 
-    /// The small (~4 MB) ffmpeg-generated movie. test01 downloads it to completion.
-    private let smallMovieTitle = "QA Movie"
+    /// Test item titles come from the environment so the suite can run against an
+    /// arbitrary catalog. QA_SMALL_TITLE: small movie downloaded to completion in
+    /// test01. QA_BIG_TITLE: large movie (>=1 GB preferred) for pause/cancel in test02.
+    private let smallMovieTitle = ProcessInfo.processInfo.environment["QA_SMALL_TITLE"] ?? "QA Movie"
+
+    private let bigMovieTitle = ProcessInfo.processInfo.environment["QA_BIG_TITLE"] ?? "QA Big Movie"
 
     /// Matches the item-detail download action in any of its states while excluding
     /// the Downloads *tab* ("Downloads") and the idle action ("Download") itself.
@@ -417,7 +421,7 @@ final class DownloadFlowUITests: XCTestCase {
         downloadsTab.tap()
         let row = app.cells
             .matching(
-                NSPredicate(format: "label CONTAINS[cd] 'QA Movie'")
+                NSPredicate(format: "label CONTAINS[cd] %@", smallMovieTitle)
             )
             .firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 30), "downloaded item missing from Downloads tab")
@@ -429,7 +433,7 @@ final class DownloadFlowUITests: XCTestCase {
         let app = Self.app
         try signInIfNeeded(app)
         dismissChrome(app)
-        try openItemViaSearch(app, title: "QA Big Movie")
+        try openItemViaSearch(app, title: bigMovieTitle)
 
         XCTAssertTrue(tapFirst(idleDownloadQuery, timeout: 15), "download button missing/unhittable on Big Movie")
         let startButton = try XCTUnwrap(
@@ -487,7 +491,7 @@ final class DownloadFlowUITests: XCTestCase {
         _ = tapFirst(app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads'")), timeout: 10)
         let stillThere = app.cells
             .matching(
-                NSPredicate(format: "label CONTAINS[cd] 'QA Big Movie'")
+                NSPredicate(format: "label CONTAINS[cd] %@", bigMovieTitle)
             )
             .firstMatch
             .waitForExistence(timeout: 5)
@@ -506,7 +510,7 @@ final class DownloadFlowUITests: XCTestCase {
 
         let row = app.cells
             .matching(
-                NSPredicate(format: "label CONTAINS[cd] 'QA Movie' AND label CONTAINS[cd] 'downloaded'")
+                NSPredicate(format: "label CONTAINS[cd] %@ AND label CONTAINS[cd] 'downloaded'", smallMovieTitle)
             )
             .firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 30), "completed download missing from Downloads tab")
