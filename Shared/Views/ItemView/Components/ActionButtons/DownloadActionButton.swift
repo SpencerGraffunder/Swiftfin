@@ -129,6 +129,7 @@ extension ItemActionButtons {
                 Button(L10n.cancel, systemImage: "xmark") {
                     manager.cancel(download.id)
                 }
+
             case .paused:
                 Button(L10n.resume, systemImage: "play") {
                     manager.resume(download.id)
@@ -137,6 +138,7 @@ extension ItemActionButtons {
                 Button(L10n.cancel, systemImage: "xmark") {
                     manager.cancel(download.id)
                 }
+
             case .failed:
                 Button(L10n.retry, systemImage: "arrow.clockwise") {
                     manager.retry(download.id)
@@ -145,6 +147,7 @@ extension ItemActionButtons {
                 Button(L10n.cancel, systemImage: "xmark") {
                     manager.cancel(download.id)
                 }
+
             case .completed:
                 Button(L10n.play, systemImage: "play.fill") {
                     playDownload(download)
@@ -161,11 +164,10 @@ extension ItemActionButtons {
         private func startDownload() {
             let mediaSource = item.mediaSources?.first
 
-            let options: DownloadOptions
-            if selectedMethod == .direct {
-                options = .direct(item)
+            let options: DownloadOptions = if selectedMethod == .direct {
+                .direct(item)
             } else {
-                options = .transcoded(bitrate: selectedBitrate, mediaSourceID: mediaSource?.id)
+                .transcoded(bitrate: selectedBitrate, mediaSourceID: mediaSource?.id)
             }
 
             Task {

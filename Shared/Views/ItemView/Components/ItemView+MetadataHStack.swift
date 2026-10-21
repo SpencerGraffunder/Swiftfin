@@ -13,7 +13,8 @@ extension ItemView {
 
     struct MetadataHStack: View {
 
-        let item: BaseItemDto
+        @SharedBaseItem
+        var item: BaseItemDto
 
         var body: some View {
             DotHStack {
@@ -29,7 +30,7 @@ extension ItemView {
                     Text(runtime, format: .hourMinuteAbbreviated)
                         // The abbreviated "1h 15m" is read as "1 h, 15 meters"
                         // by VoiceOver; spell out the units (#1738).
-                        .accessibilityLabel(runtime.formatted(.wideUnits))
+                            .accessibilityLabel(runtime.formatted(.wideUnits))
                 }
 
                 if let seasonEpisodeLabel = item.seasonEpisodeLabel {

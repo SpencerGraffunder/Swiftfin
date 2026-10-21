@@ -82,7 +82,8 @@ struct RuntimeFormatStyle: FormatStyle {
         Duration.UnitsFormatStyle(
             allowedUnits: [.hours, .minutes, .seconds],
             width: .wide
-        ).format(value)
+        )
+        .format(value)
     }
 }
 

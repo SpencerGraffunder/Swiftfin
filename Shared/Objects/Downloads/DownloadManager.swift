@@ -315,7 +315,7 @@ final class DownloadManager: ObservableObject {
     private func processQueue() {
         guard let session else { return }
 
-        let activeCount = downloads.filter { $0.state == .downloading }.count
+        let activeCount = downloads.count(where: { $0.state == .downloading })
         let queued = downloads.filter { $0.state == .queued }
         let toStart = queued.prefix(max(0, maxConcurrent - activeCount))
 
@@ -327,7 +327,6 @@ final class DownloadManager: ObservableObject {
     private func startTask(for download: Download, in session: URLSession) {
         Task { @MainActor in
             guard let index = self.index(of: download.id) else { return }
-
             guard let url = await self.resolveStreamURL(for: download) else {
                 self.markFailed(download.id)
                 self.processQueue()
@@ -338,11 +337,10 @@ final class DownloadManager: ObservableObject {
             var request = URLRequest(url: url)
             request.timeoutInterval = 600
 
-            let task: URLSessionDownloadTask
-            if let resumeData = self.resumeDataByDownloadID[download.id], !resumeData.isEmpty {
-                task = session.downloadTask(withResumeData: resumeData)
+            let task: URLSessionDownloadTask = if let resumeData = self.resumeDataByDownloadID[download.id], !resumeData.isEmpty {
+                session.downloadTask(withResumeData: resumeData)
             } else {
-                task = session.downloadTask(with: request)
+                session.downloadTask(with: request)
             }
 
             self.downloads[index].state = .downloading
