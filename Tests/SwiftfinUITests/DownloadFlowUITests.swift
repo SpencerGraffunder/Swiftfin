@@ -32,7 +32,10 @@ final class DownloadFlowUITests: XCTestCase {
 
     private func snap(_ name: String) {
         let shot = XCUIScreen.main.screenshot()
-        addAttachment(shot.pngRepresentation, named: "screenshot-\(name).png", uti: "public.png")
+        let attachment = XCTAttachment(image: shot.image)
+        attachment.name = "screenshot-\(name)"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     @discardableResult
@@ -124,8 +127,9 @@ final class DownloadFlowUITests: XCTestCase {
         downloadButton.tap()
         snap("09-download-menu")
 
-        let startButton = try XCTUnwrap(lastHittable(app.buttons["Download"]),
-                                        "download start action missing from menu")
+        let startButton = try XCTUnwrap(lastHittable(app.buttons.matching(
+            NSPredicate(format: "label == 'Download'")
+        )), "download start action missing from menu")
         startButton.tap()
         snap("10-download-started")
 
@@ -172,7 +176,9 @@ final class DownloadFlowUITests: XCTestCase {
         let downloadButton = app.buttons["Download"]
         XCTAssertTrue(downloadButton.waitForExistence(timeout: 15), "download button missing on Big Movie")
         downloadButton.tap()
-        let startButton = try XCTUnwrap(lastHittable(app.buttons["Download"]), "no hittable Download start control")
+        let startButton = try XCTUnwrap(lastHittable(app.buttons.matching(
+            NSPredicate(format: "label == 'Download'")
+        )), "no hittable Download start control")
         startButton.tap()
 
         // Re-open the menu: active download must offer Pause + Cancel (or Play if already done)
