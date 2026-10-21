@@ -194,7 +194,10 @@ final class DownloadFlowUITests: XCTestCase {
     /// two same-labeled elements is a non-functional ghost.
     @discardableResult
     private func tapUntil(_ app: XCUIApplication, label: String, indicator: XCUIElementQuery, timeout: TimeInterval) -> Bool {
-        let cta = app.buttons.matching(NSPredicate(format: "label == %@ AND visible == 1", label))
+        // NOTE: `visible` is NOT a valid XCUIElementQuery predicate keypath (XCTest
+        // throws XCTElementQueryInvalidPredicate); ghost duplicates are filtered by
+        // the isHittable check in the loop below.
+        let cta = app.buttons.matching(NSPredicate(format: "label == %@", label))
         var tried = Set<Int>()
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
