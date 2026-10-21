@@ -100,5 +100,5 @@ if build_entries && !build_entries.elements["BuildableReference[@BlueprintName='
   ref.add_attribute('ReferencedContainer', launch_ref.attributes['ReferencedContainer'])
 end
 
-File.open(scheme_path, 'w') { |f| doc.write(f, indent: 2) }
+File.open(scheme_path, 'w') { |f| doc.write(f, 2) }
 puts "Added #{target_name} (#{test_files.size} sources) to #{project_path}; host: #{app_target.name}"
