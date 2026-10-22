@@ -161,14 +161,14 @@ final class DownloadFlowUITests: XCTestCase {
             if namedFirst.exists, namedFirst.isHittable {
                 return namedFirst
             }
-            let hittable = collection.allElementsBoundByIndex.filter { $0.isHittable }
+            let hittable = collection.allElementsBoundByIndex.filter(\.isHittable)
             if title.isEmpty, let field = hittable.first {
                 return field
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.5))
         } while Date() < deadline
         // Nothing matched by name — if exactly one hittable field exists, take it.
-        let hittable = collection.allElementsBoundByIndex.filter { $0.isHittable }
+        let hittable = collection.allElementsBoundByIndex.filter(\.isHittable)
         return hittable.count == 1 ? hittable.first : nil
     }
 
@@ -242,6 +242,8 @@ final class DownloadFlowUITests: XCTestCase {
         let formHeader = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[cd] 'connect to server'"))
         // "Sign in to <server>" line on the user sign-in screen.
         let signInHeader = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[cd] 'sign in to'"))
+        // SwiftUI user-select tile: a staticText "Add user" (invisible to buttons queries).
+        let addUserTile = app.staticTexts.matching(NSPredicate(format: "label == 'Add user'"))
 
         // Zero saved servers -> ConnectToJellyfinView with a "Connect" CTA.
         // Tap until the form actually opens (glass ghosts can swallow taps).
@@ -277,13 +279,27 @@ final class DownloadFlowUITests: XCTestCase {
             }
             _ = tapFirst(app.keyboards.buttons.matching(NSPredicate(format: "label == 'Return'")), timeout: 3)
 
-            if !tapUntil(app, label: "Connect", indicator: signInHeader, timeout: 15) {
+            // After Connect, Swiftfin lands either on the sign-in form directly
+            // or on the user-select screen ("Add user" tile, no saved users yet).
+            let landed = signInHeader.firstMatch.waitForExistence(timeout: 15)
+                || addUserTile.firstMatch.waitForExistence(timeout: 5)
+            if addUserTile.firstMatch.exists {
+                addUserTile.firstMatch.tapWithRetry()
+                dismissSystemAlert()
+            }
+            if !landed, findField(in: app.textFields, title: "Username", timeout: 3) == nil {
                 dumpTree("after-connect")
                 XCTAssertFalse(true, "connecting to '\(serverURL)' never reached the user sign-in screen")
             }
         } else if !signInHeader.firstMatch.waitForExistence(timeout: 5) {
-            dumpTree("after-cta")
-            XCTAssertFalse(true, "never reached the add-server form or sign-in screen")
+            // Relaunch state: user-select screen with a saved server.
+            if addUserTile.firstMatch.waitForExistence(timeout: 8) {
+                addUserTile.firstMatch.tapWithRetry()
+                dismissSystemAlert()
+            } else if findField(in: app.textFields, title: "Username", timeout: 3) == nil {
+                dumpTree("after-cta")
+                XCTAssertFalse(true, "never reached the add-server form or sign-in screen")
+            }
         }
         snap("02-server-connected")
 
