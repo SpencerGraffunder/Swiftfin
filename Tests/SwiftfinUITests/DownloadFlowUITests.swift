@@ -369,13 +369,19 @@ final class DownloadFlowUITests: XCTestCase {
 
     /// Deterministic navigation to an item's detail page via the Search tab
     /// (home shelves are personalized/paginated and unreliable in CI).
-    private func openItemViaSearch(_ app: XCUIApplication, title: String) throws {
-        let searchTab = app.tabBars.buttons.matching(NSPredicate(format: "label == 'Search'")).firstMatch
-        XCTAssertTrue(searchTab.waitForExistence(timeout: 25), "Search tab missing")
-        searchTab.tap()
+    private func openItemViaSearch(_ app: XCUIApplication, title: String, expectDownload: Bool = true) throws {
+        let searchTab = app.tabBars.buttons.matching(NSPredicate(format: "label == 'Search'"))
+        XCTAssertTrue(searchTab.firstMatch.waitForExistence(timeout: 25), "Search tab missing")
+        // Tab-bar buttons are glass double-exposed like everything else: tap the
+        // hittable one, not firstMatch (a ghost swallow put test01 back to Home).
+        XCTAssertTrue(tapFirst(searchTab, timeout: 10), "Search tab not tappable")
 
         let searchField = app.searchFields.firstMatch
-        XCTAssertTrue(searchField.waitForExistence(timeout: 10), "search field missing")
+        if !searchField.waitForExistence(timeout: 10) {
+            dumpTree("search-screen")
+            XCTFail("search field missing")
+            return
+        }
         searchField.tap()
         searchField.typeText(title)
         _ = tapFirst(app.keyboards.buttons.matching(NSPredicate(format: "label == 'Return'")), timeout: 3)
@@ -392,12 +398,17 @@ final class DownloadFlowUITests: XCTestCase {
         }
         let found = try XCTUnwrap(result, "no search result matching '\(title)'")
         found.tapWithRetry()
+        // Series detail pages carry no Download button (downloads are per-episode),
+        // so episode navigation opts out of this check.
+        guard expectDownload else { return }
+
         let downloadIdle = app.buttons.matching(NSPredicate(format: "label == 'Download'"))
-        XCTAssertTrue(
-            downloadIdle.firstMatch.waitForExistence(timeout: 20)
-                || exists(app.buttons.matching(Self.barStatePredicate), timeout: 10),
-            "item detail for '\(title)' missing the download action"
-        )
+        if !downloadIdle.firstMatch.waitForExistence(timeout: 20),
+           !exists(app.buttons.matching(Self.barStatePredicate), timeout: 10)
+        {
+            dumpTree("detail-nodownload")
+            XCTFail("item detail for '\(title)' missing the download action")
+        }
     }
 
     /// The QA movie detail page, reached via search.
@@ -426,8 +437,17 @@ final class DownloadFlowUITests: XCTestCase {
         try openSmallMovie(app)
 
         // 1. The download button is visible in the primary action row and tappable.
-        XCTAssertTrue(idleDownloadQuery.firstMatch.waitForExistence(timeout: 15), "download button missing on item detail")
-        XCTAssertTrue(tapFirst(idleDownloadQuery, timeout: 10), "download button not tappable")
+        if !idleDownloadQuery.firstMatch.waitForExistence(timeout: 15) {
+            dumpTree("detail-nodownload-btn")
+            XCTFail("download button missing on item detail")
+            return
+        }
+        snap("11b-detail-actions")
+        if !tapFirst(idleDownloadQuery, timeout: 10) {
+            dumpTree("detail-download-unhittable")
+            XCTFail("download button not tappable")
+            return
+        }
 
         // 2. The opened menu must offer a Download start row (bar + row share the
         // label; the menu row is the last hittable one).
@@ -484,7 +504,11 @@ final class DownloadFlowUITests: XCTestCase {
         dismissChrome(app)
         try openItemViaSearch(app, title: bigMovieTitle)
 
-        XCTAssertTrue(tapFirst(idleDownloadQuery, timeout: 15), "download button missing/unhittable on Big Movie")
+        if !tapFirst(idleDownloadQuery, timeout: 15) {
+            dumpTree("bigmovie-download-unhittable")
+            XCTFail("download button missing/unhittable on Big Movie")
+            return
+        }
         let startButton = try XCTUnwrap(
             lastHittable(idleDownloadQuery),
             "no hittable Download start row in menu"
@@ -553,16 +577,20 @@ final class DownloadFlowUITests: XCTestCase {
         try signInIfNeeded(app)
         dismissChrome(app)
 
-        let downloadsTab = app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads'")).firstMatch
-        XCTAssertTrue(downloadsTab.waitForExistence(timeout: 25), "Downloads tab missing")
-        downloadsTab.tap()
+        let downloadsTab = app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads'"))
+        XCTAssertTrue(downloadsTab.firstMatch.waitForExistence(timeout: 25), "Downloads tab missing")
+        XCTAssertTrue(tapFirst(downloadsTab, timeout: 10), "Downloads tab not tappable")
 
         let row = app.cells
             .matching(
                 NSPredicate(format: "label CONTAINS[cd] %@ AND label CONTAINS[cd] 'downloaded'", smallMovieTitle)
             )
             .firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 30), "completed download missing from Downloads tab")
+        if !row.waitForExistence(timeout: 30) {
+            dumpTree("downloads-tab")
+            XCTFail("completed download missing from Downloads tab")
+            return
+        }
         row.tapWithRetry()
         snap("14-offline-detail")
 
@@ -592,7 +620,7 @@ final class DownloadFlowUITests: XCTestCase {
         let episode = ProcessInfo.processInfo.environment["QA_EPISODE_TITLE"] ?? "Wakko's New Gookie"
         let season = ProcessInfo.processInfo.environment["QA_EPISODE_SEASON"] ?? "Season 3"
 
-        try openItemViaSearch(app, title: series)
+        try openItemViaSearch(app, title: series, expectDownload: false)
         snap("20-series-detail")
 
         let epPred = NSPredicate(format: "label CONTAINS[cd] %@", episode)
