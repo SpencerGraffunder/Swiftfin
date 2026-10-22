@@ -556,6 +556,7 @@ final class DownloadFlowUITests: XCTestCase {
         XCTAssertTrue(play.waitForExistence(timeout: 15), "play control missing on offline item")
         snap("16-offline-play-ready")
     }
+
     // MARK: - Episode flow
 
     /// Navigate Search -> series -> (season picker if needed) -> episode detail.
@@ -604,7 +605,7 @@ final class DownloadFlowUITests: XCTestCase {
             idleDownloadQuery.firstMatch.waitForExistence(timeout: 15),
             "download button missing on episode detail"
         )
-        _ = tapUntil(app, label: "Download", indicator: Self.barStatePredicate, timeout: 20)
+        _ = tapUntil(app, label: "Download", indicator: stateDownloadQuery, timeout: 20)
 
         let completed = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[cd] 'downloaded'")).firstMatch
         let failed = app.buttons.matching(NSPredicate(format: "label CONTAINS[cd] 'download failed'")).firstMatch
@@ -649,5 +650,4 @@ extension XCUIElement {
             }
         }
     }
-
 }
