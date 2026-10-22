@@ -135,6 +135,7 @@ final class DownloadFlowUITests: XCTestCase {
     /// (trailer player, post-sign-in sheet) is covering the whole page — observed
     /// as an entirely unhittable detail screen behind a hittable 'Close'.
     private func clearBlockingOverlay(_ app: XCUIApplication) {
+        dismissSystemAlert()
         let tab = app.tabBars.buttons.matching(NSPredicate(format: "label == 'Search'")).firstMatch
         if tab.exists, !tab.isHittable {
             _ = tapFirst(app.buttons.matching(NSPredicate(format: "label == 'Close'")), timeout: 2)
@@ -150,10 +151,19 @@ final class DownloadFlowUITests: XCTestCase {
         // 130 s later, swallowing the Return tap on the connect form).
         for _ in 0 ..< passes {
             var dismissed = false
-            for label in ["Allow", "OK", "Later", "Don’t Allow", "Continue"] {
+            // "Not Now" declines the password-save prompt that fires right after
+            // Sign in — on iOS 27 it renders INSIDE the app's own AX tree,
+            // covering the tab bar (observed: every tab unhittable behind its
+            // Save/Not Now pair), so check the app tree as well as SpringBoard.
+            for label in ["Allow", "OK", "Later", "Don’t Allow", "Continue", "Not Now"] {
                 let b = springboard.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
-                if b.waitForExistence(timeout: 0.5), b.isHittable {
+                if b.waitForExistence(timeout: 0.3), b.isHittable {
                     b.tap()
+                    dismissed = true
+                }
+                let a = Self.app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
+                if a.exists, a.isHittable {
+                    a.tap()
                     dismissed = true
                 }
             }
@@ -202,19 +212,21 @@ final class DownloadFlowUITests: XCTestCase {
     /// diagnosable from CI output alone.
     private func dumpTree(_ tag: String) {
         let app = Self.app
-        print("### TREE[\(tag)] buttons:")
-        for el in app.buttons.allElementsBoundByIndex {
-            print("###   button label='\(el.label)' id='\(el.identifier)' enabled=\(el.isEnabled) hittable=\(el.isHittable)")
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        print("### TREE[\(tag)] START")
+        // debugDescription takes ONE consistent server-side snapshot. Per-element
+        // property reads raced with animating system prompts and threw
+        // "No matches found for Element at index N" mid-dump.
+        print(app.debugDescription)
+        print("### TREE[\(tag)] HITTABLE:")
+        for probe in ["Search", "Home", "Close", "Not Now", "Save", "Download"] {
+            let q = app.buttons.matching(NSPredicate(format: "label == %@", probe))
+            let fm = q.firstMatch
+            if fm.exists {
+                print("###   probe '\(probe)': matches=\(q.count) firstHittable=\(fm.isHittable)")
+            }
         }
-        print("### TREE[\(tag)] textFields:")
-        for el in app.textFields.allElementsBoundByIndex {
-            print("###   textField label='\(el.label)' value='\(String(describing: el.value))' id='\(el.identifier)'")
-        }
-        print("### TREE[\(tag)] secureTextFields:")
-        for el in app.secureTextFields.allElementsBoundByIndex {
-            print("###   secureField label='\(el.label)' id='\(el.identifier)'")
-        }
-        print("### TREE[\(tag)] staticTexts: \(app.staticTexts.allElementsBoundByIndex.map(\.label).joined(separator: " | "))")
+        print("### TREE[\(tag)] END")
     }
 
     /// Taps EVERY hittable element matching `label` (once each) until an element of
