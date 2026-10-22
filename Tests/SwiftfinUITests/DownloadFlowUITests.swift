@@ -518,6 +518,7 @@ final class DownloadFlowUITests: XCTestCase {
         XCTAssertTrue(downloadsTab.firstMatch.waitForExistence(timeout: 10), "Downloads tab missing")
         XCTAssertTrue(tapFirst(downloadsTab, timeout: 10), "Downloads tab not tappable")
         let row = app.cells
+            .staticTexts
             .matching(
                 NSPredicate(format: "label CONTAINS[cd] %@", smallMovieTitle)
             )
@@ -592,6 +593,7 @@ final class DownloadFlowUITests: XCTestCase {
         // The Downloads tab must no longer list the cancelled download.
         _ = tapFirst(app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads'")), timeout: 10)
         let stillThere = app.cells
+            .staticTexts
             .matching(
                 NSPredicate(format: "label CONTAINS[cd] %@", bigMovieTitle)
             )
@@ -611,6 +613,7 @@ final class DownloadFlowUITests: XCTestCase {
         XCTAssertTrue(tapFirst(downloadsTab, timeout: 10), "Downloads tab not tappable")
 
         let row = app.cells
+            .staticTexts
             .matching(
                 NSPredicate(format: "label CONTAINS[cd] %@ AND label CONTAINS[cd] 'downloaded'", smallMovieTitle)
             )
@@ -653,7 +656,7 @@ final class DownloadFlowUITests: XCTestCase {
         snap("20-series-detail")
 
         let epPred = NSPredicate(format: "label CONTAINS[cd] %@", episode)
-        let epCell = app.cells.matching(epPred).firstMatch
+        let epCell = app.cells.staticTexts.matching(epPred).firstMatch
         if epCell.waitForExistence(timeout: 8) {
             epCell.tap()
             RunLoop.current.run(until: Date().addingTimeInterval(2))
@@ -665,7 +668,7 @@ final class DownloadFlowUITests: XCTestCase {
         XCTAssertTrue(seasonBtn.waitForExistence(timeout: 8), "season picker missing on series detail")
         seasonBtn.tap()
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
-        let row = app.staticTexts.matching(epPred).firstMatch
+        let row = app.cells.staticTexts.matching(epPred).firstMatch
         if !row.waitForExistence(timeout: 8) {
             dumpTree("episode-picker")
         }
@@ -718,7 +721,7 @@ final class DownloadFlowUITests: XCTestCase {
         XCTAssertTrue(dlTab.firstMatch.waitForExistence(timeout: 15), "Downloads tab missing")
         XCTAssertTrue(tapFirst(dlTab, timeout: 10), "Downloads tab not tappable")
         XCTAssertTrue(
-            app.cells.matching(NSPredicate(format: "label CONTAINS[cd] %@", episode)).firstMatch.waitForExistence(timeout: 20),
+            app.cells.staticTexts.matching(NSPredicate(format: "label CONTAINS[cd] %@", episode)).firstMatch.waitForExistence(timeout: 20),
             "completed episode missing from Downloads tab"
         )
         snap("23-episode-in-downloads")
