@@ -311,11 +311,13 @@ final class DownloadFlowUITests: XCTestCase {
 
         userField.tap()
         userField.typeText(username)
+        dismissSystemAlert() // slide-to-type hint swallows the form's AX tree
         if (userField.value as? String)?.contains(username) != true {
             userField.tap()
             userField.typeText(username)
         }
 
+        dismissSystemAlert()
         guard let passField = findField(in: app.secureTextFields, title: "Password", timeout: 10) else {
             dumpTree("password-field")
             XCTAssertFalse(true, "password field missing")
@@ -568,4 +570,85 @@ extension XCUIElement {
             }
         }
     }
+
+    // MARK: - Episode flow
+
+    /// Navigate Search -> series -> (season picker if needed) -> episode detail.
+    private func openEpisodeForDownload(_ app: XCUIApplication) throws {
+        dismissChrome(app)
+        let series = ProcessInfo.processInfo.environment["QA_SHOW_TITLE"] ?? "Animaniacs"
+        let episode = ProcessInfo.processInfo.environment["QA_EPISODE_TITLE"] ?? "Wakko's New Gookie"
+        let season = ProcessInfo.processInfo.environment["QA_EPISODE_SEASON"] ?? "Season 3"
+
+        try openItemViaSearch(app, title: series)
+        snap("20-series-detail")
+
+        let epPred = NSPredicate(format: "label CONTAINS[cd] %@", episode)
+        let epCell = app.cells.matching(epPred).firstMatch
+        if epCell.waitForExistence(timeout: 8) {
+            epCell.tapWithRetry()
+            return
+        }
+        // Episodes live behind the season picker on the series detail page.
+        let seasonBtn = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[cd] %@", season)).firstMatch
+        XCTAssertTrue(seasonBtn.waitForExistence(timeout: 8), "season picker missing on series detail")
+        seasonBtn.tapWithRetry()
+        let row = app.staticTexts.matching(epPred).firstMatch
+        if !row.waitForExistence(timeout: 8) {
+            dumpTree("episode-picker")
+        }
+        row.tapWithRetry()
+        dismissSystemAlert()
+        // If the picker sheet lingers, dismiss it explicitly.
+        _ = tapFirst(
+            app.buttons.matching(NSPredicate(format: "label CONTAINS[cd] 'done' OR label CONTAINS[cd] 'close'")),
+            timeout: 3
+        )
+        dismissChrome(app)
+    }
+
+    func test04EpisodeDownload() throws {
+        let app = Self.app
+        try signInIfNeeded(app)
+        let episode = ProcessInfo.processInfo.environment["QA_EPISODE_TITLE"] ?? "Wakko's New Gookie"
+
+        try openEpisodeForDownload(app)
+        snap("21-episode-detail")
+
+        XCTAssertTrue(
+            idleDownloadQuery.firstMatch.waitForExistence(timeout: 15),
+            "download button missing on episode detail"
+        )
+        _ = tapUntil(app, label: "Download", identifierContains: "download", indicator: Self.barStatePredicate, timeout: 20)
+
+        let completed = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[cd] 'downloaded'")).firstMatch
+        let failed = app.buttons.matching(NSPredicate(format: "label CONTAINS[cd] 'download failed'")).firstMatch
+        let deadline = Date().addingTimeInterval(300)
+        var settled = false
+        while Date() < deadline {
+            dismissSystemAlert()
+            if failed.exists {
+                dumpTree("episode-failed")
+                XCTFail("episode download failed")
+                return
+            }
+            if completed.exists {
+                settled = true
+                break
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(2))
+        }
+        XCTAssertTrue(settled, "episode download did not complete within 300s")
+        snap("22-episode-done")
+
+        let dlTab = app.tabBars.buttons.matching(NSPredicate(format: "label CONTAINS[cd] 'Download'")).firstMatch
+        XCTAssertTrue(dlTab.waitForExistence(timeout: 15), "Downloads tab missing")
+        dlTab.tapWithRetry()
+        XCTAssertTrue(
+            app.cells.matching(NSPredicate(format: "label CONTAINS[cd] %@", episode)).firstMatch.waitForExistence(timeout: 20),
+            "completed episode missing from Downloads tab"
+        )
+        snap("23-episode-in-downloads")
+    }
+
 }

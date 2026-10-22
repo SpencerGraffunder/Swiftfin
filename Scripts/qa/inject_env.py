@@ -15,7 +15,9 @@ def main() -> int:
     print("xctestrun:", path)
 
     env = {k: os.environ[k] for k in
-            ("QA_SERVER_URL", "QA_USER", "QA_PASS", "QA_SMALL_TITLE", "QA_BIG_TITLE")
+            ("QA_SERVER_URL", "QA_USERNAME", "QA_PASSWORD",
+             "QA_SMALL_TITLE", "QA_BIG_TITLE",
+             "QA_SHOW_TITLE", "QA_EPISODE_TITLE", "QA_EPISODE_SEASON")
             if k in os.environ}
     if not env:
         print("no QA_* vars in environment", file=sys.stderr)
