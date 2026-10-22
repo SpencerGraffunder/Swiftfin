@@ -134,11 +134,20 @@ final class DownloadFlowUITests: XCTestCase {
     /// Taps the button of a system permission alert (local-network discovery etc.)
     /// or the first-keyboard "slide to type" tip if one is up. Those live in
     /// SpringBoard, not the app's own element tree.
-    private func dismissSystemAlert() {
-        for label in ["Allow", "OK", "Later", "Don’t Allow", "Continue"] {
-            let b = springboard.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
-            if b.waitForExistence(timeout: 0.5) {
-                b.tap()
+    private func dismissSystemAlert(passes: Int = 3) {
+        // The slide-to-type tip can appear AFTER the keyboard comes up, so sweep
+        // repeatedly until no system button remains (observed: tip still on screen
+        // 130 s later, swallowing the Return tap on the connect form).
+        for _ in 0 ..< passes {
+            var dismissed = false
+            for label in ["Allow", "OK", "Later", "Don’t Allow", "Continue"] {
+                let b = springboard.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
+                if b.waitForExistence(timeout: 0.5), b.isHittable {
+                    b.tap()
+                    dismissed = true
+                }
+            }
+            if !dismissed {
                 return
             }
         }
@@ -167,7 +176,14 @@ final class DownloadFlowUITests: XCTestCase {
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.5))
         } while Date() < deadline
-        // Nothing matched by name — if exactly one hittable field exists, take it.
+        // The unnamed-field fallback is for the connect form's URL field ONLY
+        // (a lone empty SwiftUI TextField). For any other title a wrong field
+        // silently steals input — observed: the username typed into the URL
+        // field while still on the connect form. Fail with a dump instead.
+        guard title == "URL" else {
+            return nil
+        }
+
         let hittable = collection.allElementsBoundByIndex.filter(\.isHittable)
         return hittable.count == 1 ? hittable.first : nil
     }
@@ -278,6 +294,14 @@ final class DownloadFlowUITests: XCTestCase {
                 urlField.typeText(serverURL)
             }
             _ = tapFirst(app.keyboards.buttons.matching(NSPredicate(format: "label == 'Return'")), timeout: 3)
+            dismissSystemAlert()
+            // Keyboard Return alone is unreliable (the slide-to-type tip swallows
+            // taps). The connect form has its own Connect button — glass
+            // double-exposed, so tap the first hittable match — unless we have
+            // already navigated past the form.
+            if !signInHeader.firstMatch.exists, !addUserTile.firstMatch.exists {
+                _ = tapFirst(app.buttons.matching(NSPredicate(format: "label == 'Connect'")), timeout: 5)
+            }
 
             // After Connect, Swiftfin lands either on the sign-in form directly
             // or on the user-select screen ("Add user" tile, no saved users yet).
@@ -287,9 +311,10 @@ final class DownloadFlowUITests: XCTestCase {
                 addUserTile.firstMatch.tapWithRetry()
                 dismissSystemAlert()
             }
-            if !landed, findField(in: app.textFields, title: "Username", timeout: 3) == nil {
+            if !landed {
                 dumpTree("after-connect")
                 XCTAssertFalse(true, "connecting to '\(serverURL)' never reached the user sign-in screen")
+                return
             }
         } else if !signInHeader.firstMatch.waitForExistence(timeout: 5) {
             // Relaunch state: user-select screen with a saved server.
@@ -299,6 +324,7 @@ final class DownloadFlowUITests: XCTestCase {
             } else if findField(in: app.textFields, title: "Username", timeout: 3) == nil {
                 dumpTree("after-cta")
                 XCTAssertFalse(true, "never reached the add-server form or sign-in screen")
+                return
             }
         }
         snap("02-server-connected")
