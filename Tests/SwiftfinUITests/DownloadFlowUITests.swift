@@ -695,7 +695,23 @@ final class DownloadFlowUITests: XCTestCase {
             idleDownloadQuery.firstMatch.waitForExistence(timeout: 15),
             "download button missing on episode detail"
         )
-        _ = tapUntil(app, label: "Download", indicator: stateDownloadQuery, timeout: 20)
+        // The Download CTA is a Menu (bar button + in-menu 'Download' row share the
+        // label; the row is the last hittable match). On episode detail a plain
+        // synthesized tap was observed NOT opening the menu (iOS 27), so escalate:
+        // tap -> menu row -> long-press -> menu row.
+        XCTAssertTrue(tapFirst(idleDownloadQuery, timeout: 10), "episode download bar button not tappable")
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        if !stateDownloadQuery.firstMatch.exists, let row = lastHittable(idleDownloadQuery) {
+            row.tap()
+            RunLoop.current.run(until: Date().addingTimeInterval(2))
+        }
+        if !stateDownloadQuery.firstMatch.exists, idleDownloadQuery.firstMatch.exists {
+            idleDownloadQuery.firstMatch.press(forDuration: 0.7)
+            RunLoop.current.run(until: Date().addingTimeInterval(2))
+            if let row = lastHittable(idleDownloadQuery) {
+                row.tap()
+            }
+        }
 
         let completed = app.buttons.matching(NSPredicate(format: "label BEGINSWITH[cd] 'downloaded'")).firstMatch
         let failed = app.buttons.matching(NSPredicate(format: "label CONTAINS[cd] 'download failed'")).firstMatch
@@ -713,6 +729,9 @@ final class DownloadFlowUITests: XCTestCase {
                 break
             }
             RunLoop.current.run(until: Date().addingTimeInterval(2))
+        }
+        if !settled {
+            dumpTree("episode-timeout")
         }
         XCTAssertTrue(settled, "episode download did not complete within 300s")
         snap("22-episode-done")
