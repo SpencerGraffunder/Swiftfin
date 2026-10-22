@@ -131,6 +131,16 @@ final class DownloadFlowUITests: XCTestCase {
         }
     }
 
+    /// A hittable 'Close' while the tab bar is NOT hittable means a modal overlay
+    /// (trailer player, post-sign-in sheet) is covering the whole page — observed
+    /// as an entirely unhittable detail screen behind a hittable 'Close'.
+    private func clearBlockingOverlay(_ app: XCUIApplication) {
+        let tab = app.tabBars.buttons.matching(NSPredicate(format: "label == 'Search'")).firstMatch
+        if tab.exists, !tab.isHittable {
+            _ = tapFirst(app.buttons.matching(NSPredicate(format: "label == 'Close'")), timeout: 2)
+        }
+    }
+
     /// Taps the button of a system permission alert (local-network discovery etc.)
     /// or the first-keyboard "slide to type" tip if one is up. Those live in
     /// SpringBoard, not the app's own element tree.
@@ -308,7 +318,7 @@ final class DownloadFlowUITests: XCTestCase {
             let landed = signInHeader.firstMatch.waitForExistence(timeout: 15)
                 || addUserTile.firstMatch.waitForExistence(timeout: 5)
             if addUserTile.firstMatch.exists {
-                addUserTile.firstMatch.tapWithRetry()
+                addUserTile.firstMatch.tapUntilNavigated(from: "Add user")
                 dismissSystemAlert()
             }
             if !landed {
@@ -319,7 +329,7 @@ final class DownloadFlowUITests: XCTestCase {
         } else if !signInHeader.firstMatch.waitForExistence(timeout: 5) {
             // Relaunch state: user-select screen with a saved server.
             if addUserTile.firstMatch.waitForExistence(timeout: 8) {
-                addUserTile.firstMatch.tapWithRetry()
+                addUserTile.firstMatch.tapUntilNavigated(from: "Add user")
                 dismissSystemAlert()
             } else if findField(in: app.textFields, title: "Username", timeout: 3) == nil {
                 dumpTree("after-cta")
@@ -372,9 +382,14 @@ final class DownloadFlowUITests: XCTestCase {
     private func openItemViaSearch(_ app: XCUIApplication, title: String, expectDownload: Bool = true) throws {
         let searchTab = app.tabBars.buttons.matching(NSPredicate(format: "label == 'Search'"))
         XCTAssertTrue(searchTab.firstMatch.waitForExistence(timeout: 25), "Search tab missing")
+        clearBlockingOverlay(app)
         // Tab-bar buttons are glass double-exposed like everything else: tap the
         // hittable one, not firstMatch (a ghost swallow put test01 back to Home).
-        XCTAssertTrue(tapFirst(searchTab, timeout: 10), "Search tab not tappable")
+        if !tapFirst(searchTab, timeout: 10) {
+            dumpTree("search-tab-blocked")
+            XCTFail("Search tab not tappable")
+            return
+        }
 
         let searchField = app.searchFields.firstMatch
         if !searchField.waitForExistence(timeout: 10) {
@@ -397,7 +412,9 @@ final class DownloadFlowUITests: XCTestCase {
             }
         }
         let found = try XCTUnwrap(result, "no search result matching '\(title)'")
-        found.tapWithRetry()
+        // The search field exists only on the search screen; its disappearance is
+        // the proof of navigation. (Blind re-taps here opened the trailer sheet.)
+        found.tapUntilNavigated(from: "Search")
         // Series detail pages carry no Download button (downloads are per-episode),
         // so episode navigation opts out of this check.
         guard expectDownload else { return }
@@ -485,9 +502,9 @@ final class DownloadFlowUITests: XCTestCase {
         snap("14-download-complete")
 
         // 5. Downloads tab lists the item as downloaded.
-        let downloadsTab = app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads'")).firstMatch
-        XCTAssertTrue(downloadsTab.waitForExistence(timeout: 10), "Downloads tab missing")
-        downloadsTab.tap()
+        let downloadsTab = app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads'"))
+        XCTAssertTrue(downloadsTab.firstMatch.waitForExistence(timeout: 10), "Downloads tab missing")
+        XCTAssertTrue(tapFirst(downloadsTab, timeout: 10), "Downloads tab not tappable")
         let row = app.cells
             .matching(
                 NSPredicate(format: "label CONTAINS[cd] %@", smallMovieTitle)
@@ -591,7 +608,7 @@ final class DownloadFlowUITests: XCTestCase {
             XCTFail("completed download missing from Downloads tab")
             return
         }
-        row.tapWithRetry()
+        row.tapUntilNavigated(from: "No Downloads")
         snap("14-offline-detail")
 
         let detailDownload = app.buttons
@@ -626,18 +643,22 @@ final class DownloadFlowUITests: XCTestCase {
         let epPred = NSPredicate(format: "label CONTAINS[cd] %@", episode)
         let epCell = app.cells.matching(epPred).firstMatch
         if epCell.waitForExistence(timeout: 8) {
-            epCell.tapWithRetry()
+            epCell.tap()
+            RunLoop.current.run(until: Date().addingTimeInterval(2))
+            dismissSystemAlert()
             return
         }
         // Episodes live behind the season picker on the series detail page.
         let seasonBtn = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[cd] %@", season)).firstMatch
         XCTAssertTrue(seasonBtn.waitForExistence(timeout: 8), "season picker missing on series detail")
-        seasonBtn.tapWithRetry()
+        seasonBtn.tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
         let row = app.staticTexts.matching(epPred).firstMatch
         if !row.waitForExistence(timeout: 8) {
             dumpTree("episode-picker")
         }
-        row.tapWithRetry()
+        row.tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
         dismissSystemAlert()
         // If the picker sheet lingers, dismiss it explicitly.
         _ = tapFirst(
@@ -681,9 +702,9 @@ final class DownloadFlowUITests: XCTestCase {
         XCTAssertTrue(settled, "episode download did not complete within 300s")
         snap("22-episode-done")
 
-        let dlTab = app.tabBars.buttons.matching(NSPredicate(format: "label CONTAINS[cd] 'Download'")).firstMatch
-        XCTAssertTrue(dlTab.waitForExistence(timeout: 15), "Downloads tab missing")
-        dlTab.tapWithRetry()
+        let dlTab = app.tabBars.buttons.matching(NSPredicate(format: "label == 'Downloads' OR label == 'Download'"))
+        XCTAssertTrue(dlTab.firstMatch.waitForExistence(timeout: 15), "Downloads tab missing")
+        XCTAssertTrue(tapFirst(dlTab, timeout: 10), "Downloads tab not tappable")
         XCTAssertTrue(
             app.cells.matching(NSPredicate(format: "label CONTAINS[cd] %@", episode)).firstMatch.waitForExistence(timeout: 20),
             "completed episode missing from Downloads tab"
@@ -692,15 +713,29 @@ final class DownloadFlowUITests: XCTestCase {
     }
 }
 
+// NOTE: the old tapWithRetry blind-tapped up to 3x while the element still
+// 'existed' — the 2nd/3rd taps landed on the detail page (e.g. opening the
+// trailer sheet, observed as an unhittable page behind a hittable 'Close').
+// Navigation taps must use tapUntilNavigated(from:) below.
 extension XCUIElement {
-    /// Retry a tap whose first attempt can land during a transition.
-    func tapWithRetry(maxAttempts: Int = 3) {
+    /// Taps once; if the screen did not change within `perTry` seconds, retries
+    /// — but NEVER taps again after a successful navigation. `probe` is a static
+    /// string that only exists on the CURRENT screen; the tap is considered
+    /// successful when it disappears.
+    func tapUntilNavigated(from probe: String, perTry: TimeInterval = 2.0, maxAttempts: Int = 3) {
+        let owner = XCUIApplication(bundleIdentifier: "org.jellyfin.swiftfin")
+        let anchor = owner.staticTexts[probe]
         for _ in 0 ..< maxAttempts {
-            if exists {
-                tap()
-            }
-            if !waitForExistence(timeout: 1.5) {
+            if !exists {
                 return
+            }
+            tap()
+            let deadline = Date().addingTimeInterval(perTry)
+            while Date() < deadline {
+                if !anchor.exists {
+                    return
+                }
+                RunLoop.current.run(until: Date().addingTimeInterval(0.25))
             }
         }
     }
