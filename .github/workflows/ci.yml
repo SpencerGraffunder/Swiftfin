@@ -23,6 +23,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Needed by the publish job to create GitHub Releases for the .ipa.
+permissions:
+  contents: write
+
 jobs:
   build:
     name: "Build 🔨"
@@ -39,6 +43,11 @@ jobs:
 
     env:
       XCODE_VERSION: "26.6"
+
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      build: ${{ steps.package.outputs.build }}
+      asset: ${{ steps.package.outputs.asset }}
 
     steps:
       - name: Checkout
@@ -77,20 +86,34 @@ jobs:
             xcodeVersion:${{ env.XCODE_VERSION }}
 
       - name: Package unsigned IPA
+        id: package
         env:
           SCHEME: ${{ matrix.scheme }}
         run: |
           set -euo pipefail
+          # Hub-site release scheme (shared with key-decoder/pianobar/YouTubePlus):
+          # bundle version = build date + run number, yy.m.d-<run>. fastlane
+          # buildLane does not forward build settings, so this staged-PlistBuddy
+          # stamp is the SINGLE version mechanism for this repo.
+          APP_VERSION=$(date -u +%y.%-m.%-d)
+          APP_BUILD=$GITHUB_RUN_NUMBER
+          ASSET="$SCHEME-$APP_VERSION-$APP_BUILD.ipa"
+          echo "version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "build=$APP_BUILD" >> "$GITHUB_OUTPUT"
+          echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
           mkdir -p fastlane/build/Payload
           cp -R fastlane/build/*.xcarchive/Products/Applications/*.app fastlane/build/Payload/
+          APP=$(find fastlane/build/Payload -maxdepth 1 -name '*.app' | head -1)
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $APP_BUILD" "$APP/Info.plist"
           cd fastlane/build
-          zip -r -y "$SCHEME-unsigned.ipa" Payload
+          zip -r -y "$ASSET" Payload
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.scheme }}-unsigned
-          path: fastlane/build/*-unsigned.ipa
+          name: ${{ steps.package.outputs.asset }}
+          path: fastlane/build/*.ipa
           if-no-files-found: error
           compression-level: 0
 
@@ -106,3 +129,77 @@ jobs:
             build/SourcePackages/artifacts
             build/SourcePackages/workspace-state.json
           key: ${{ steps.swift-packages.outputs.cache-primary-key }}
+
+  publish:
+    name: "Publish .ipa 🚀"
+    # Main builds / manual dispatch only: self-hosted runners must never
+    # execute unreviewed fork code on Spec's Mac (same guard as key-decoder).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: build
+    runs-on: [self-hosted, nuclear-mac]
+
+    env:
+      # LaunchAgent services get a minimal PATH; Homebrew gh and /usr/bin/jq
+      # are not a macOS login-session guarantee.
+      PATH: /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+      VERSION: ${{ needs.build.outputs.version }}
+      BUILD: ${{ needs.build.outputs.build }}
+      ASSET: ${{ needs.build.outputs.asset }}
+
+    steps:
+      - name: Download unsigned .ipa
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.asset }}
+          path: out
+
+      - name: Publish GitHub Release (bare .ipa, newest-only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # One release per main build; tag + title identical to the version
+          # stamped into the bundle. --latest keeps releases/latest (the hub
+          # site download button) pointing at the newest build.
+          TAG="$VERSION-$BUILD"
+          FILE="out/$ASSET"
+          ls -lh "$FILE"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE" --clobber
+          else
+            gh release create "$TAG" "$FILE" \
+              --target "$GITHUB_SHA" \
+              --title "Swiftfin $VERSION ($BUILD)" \
+              --latest \
+              --notes "Build $BUILD of $VERSION — custom fork of jellyfin/Swiftfin. Unsigned .ipa: re-sign with Sideloadly / AltStore / Xcode using your Apple ID to install."
+          fi
+          # Newest-only policy (2026-11-14, Spec standing rule): hub + iCloud
+          # keep ONLY the current build. Prune superseded versioned releases
+          # (the yy.m.d-<run> pattern never touches upstream 1.x tags or any
+          # other release shape).
+          OLD_TAGS=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+                      --jq '.[].tag_name' \
+                    | grep -E '^[0-9]{2}\.[0-9]+\.[0-9]+-[0-9]+$' \
+                    | grep -v -x "$TAG" || true)
+          for OLD in $OLD_TAGS; do
+            echo "Pruning superseded release $OLD"
+            gh release delete "$OLD" --yes --cleanup-tag
+          done
+
+      - name: Mirror .ipa to iCloud Drive
+        continue-on-error: true
+        run: |
+          # This runner IS Spec's Mac, so a local copy into iCloud Drive IS
+          # the upload (bird syncs it within seconds; no cron, no tokens).
+          # continue-on-error: a sync hiccup must never redden a build — the
+          # GitHub Release stays the canonical download.
+          DEST="$HOME/Library/Mobile Documents/com~apple~CloudDocs/IPAs"
+          mkdir -p "$DEST"
+          cp -f "out/$ASSET" "$DEST/$ASSET"
+          # Newest-only policy: drop superseded Swiftfin builds from the
+          # shared collection folder (Swiftfin prefix only — other apps'
+          # files are pruned by their own pipelines).
+          find "$DEST" -maxdepth 1 -type f -name 'Swiftfin*.ipa' ! -name "$ASSET" -delete
+          ls -lh "$DEST"
