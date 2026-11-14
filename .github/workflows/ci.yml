@@ -92,9 +92,12 @@ jobs:
           retry_on: error
           timeout_minutes: 60
           command: |
+            # Fork adjustment: no xcodeVersion argument. The self-hosted
+            # xcode-27 runner ships a single system Xcode and has no `xcodes`
+            # CLI, which fastlane's xcodes action requires. The system toolchain
+            # (Xcode 27.x) satisfies this tree; passing the version would fail.
             bundle exec fastlane buildLane \
-              "scheme:$SCHEME" \
-              "xcodeVersion:$XCODE_VERSION"
+              "scheme:$SCHEME"
 
       - name: Save Swift packages
         if: ${{ github.event_name == 'push' && steps.swift-packages.outputs.cache-hit != 'true' }}

@@ -83,7 +83,7 @@ extension ItemActionButtons {
                     // inside the glyph: same arrow.down.circle with a trim
                     // ring tracing the download's completion.
                     Label {
-                        Text(L10n.downloading) + Text(" \(Int(download.progress * 100))%")
+                        Text(L10n.downloadProgress(Int(download.progress * 100)))
                     } icon: {
                         Image(systemName: "arrow.down.circle")
                             .overlay {
@@ -158,7 +158,7 @@ extension ItemActionButtons {
                         Text(L10n.downloading)
                     }
 
-                    Text("\(Int(download.progress * 100))%")
+                    Text(L10n.downloadProgress(Int(download.progress * 100)))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

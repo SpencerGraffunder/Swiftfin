@@ -104,7 +104,7 @@ private struct DownloadRow: View {
                 Label {
                     Text(
                         download.state == .downloading
-                            ? L10n.downloading + " — \(Int(download.progress * 100))%"
+                            ? L10n.downloadProgress(Int(download.progress * 100))
                             : L10n.downloading
                     )
                 } icon: {
