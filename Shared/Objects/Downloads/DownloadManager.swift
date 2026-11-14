@@ -378,32 +378,6 @@ final class DownloadManager: ObservableObject {
         }
     }
 
-    // MARK: - Offline playback
-
-    /// Builds a `MediaPlayerItem` that plays a locally downloaded file, reusing the
-    /// same playback pipeline (device profile, track handling) as online playback
-    /// (issue #1789).
-    static func makeOfflinePlaybackItem(
-        item: BaseItemDto,
-        mediaSource: MediaSourceInfo,
-        fileURL: URL,
-        bitrate: PlaybackBitrate
-    ) -> MediaPlayerItem {
-        let deviceProfile = DeviceProfile.build(
-            for: Defaults[.VideoPlayer.videoPlayerType],
-            compatibilityMode: .directPlay
-        )
-
-        return MediaPlayerItem(
-            baseItem: item,
-            mediaSource: mediaSource,
-            playSessionID: UUID().uuidString,
-            url: fileURL,
-            requestedBitrate: bitrate,
-            deviceProfile: deviceProfile
-        )
-    }
-
     // MARK: - Task helpers
 
     private func cancelActiveTask(for downloadID: String, onCancelling: @escaping (Data) -> Void) {

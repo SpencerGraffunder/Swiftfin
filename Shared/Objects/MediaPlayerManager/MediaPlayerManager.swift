@@ -77,7 +77,9 @@ final class MediaPlayerManager {
         stop()
 
         var intent = intent
-        if intent.queue == nil, intent.item.type == .episode {
+        // Offline (downloaded) playback must not auto-queue the following
+        // episodes: advancing would require the server (issue #1789).
+        if intent.queue == nil, intent.item.type == .episode, intent.offline == nil {
             intent.queue = EpisodeMediaPlayerQueue()
         }
 

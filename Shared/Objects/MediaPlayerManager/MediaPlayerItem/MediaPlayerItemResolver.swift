@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Defaults
 import Foundation
 import JellyfinAPI
 import Logging
@@ -19,6 +20,13 @@ enum MediaPlayerItemResolver {
         for profile: PlaybackProfile,
         userSession: UserSession
     ) async throws -> MediaPlayerItem {
+        // Fork addition (issue #1789): completed local downloads resolve fully
+        // offline — no item fetch, playback-info negotiation, bitrate test or
+        // stream URL construction.
+        if let offline = intent.offline {
+            return try Self.resolveOffline(intent: intent, offline: offline, profile: profile)
+        }
+
         try Task.checkCancellation()
         guard var initialItem = intent.entry.value else { throw ItemStore.StoreError.itemUnavailable }
 
@@ -175,6 +183,42 @@ enum MediaPlayerItemResolver {
             closeLiveStreams(response.value.mediaSources ?? [], userSession: userSession)
             throw error
         }
+    }
+
+    private static func resolveOffline(
+        intent: PlaybackIntent,
+        offline: PlaybackIntent.OfflinePlayback,
+        profile: PlaybackProfile
+    ) throws -> MediaPlayerItem {
+        guard let item = intent.entry.value else { throw ItemStore.StoreError.itemUnavailable }
+
+        guard FileManager.default.fileExists(atPath: offline.fileURL.path) else {
+            throw ErrorMessage(L10n.downloadFailed)
+        }
+
+        let mediaSource = offline.mediaSource
+
+        var configuration = intent.configuration
+        configuration.prepare(for: item, source: mediaSource, profile: profile)
+        configuration.finish(source: mediaSource, initialSource: mediaSource)
+
+        let deviceProfile = DeviceProfile.build(
+            for: Defaults[.VideoPlayer.videoPlayerType],
+            compatibilityMode: .directPlay
+        )
+
+        return .init(
+            baseItem: item,
+            mediaSource: mediaSource,
+            playSessionID: UUID().uuidString,
+            url: offline.fileURL,
+            configuration: configuration,
+            deviceProfile: deviceProfile,
+            chapters: [],
+            temporaryFiles: PlaybackTemporaryFiles(accessToken: nil),
+            previewImageProvider: nil,
+            thumbnailProvider: nil
+        )
     }
 
     private static func getMaxBitrate(

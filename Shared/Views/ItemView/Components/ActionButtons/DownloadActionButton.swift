@@ -80,7 +80,20 @@ extension ItemActionButtons {
                 case .downloading, .queued:
                     Label(L10n.downloading, systemImage: "arrow.down.circle")
                 case .completed:
-                    Label(L10n.downloaded, systemImage: "checkmark.circle.fill")
+                    // The download glyph stays visible with a small offset
+                    // check badge on top, instead of swapping to a bare
+                    // checkmark whose meaning was unclear.
+                    Label {
+                        Text(L10n.downloaded)
+                    } icon: {
+                        Image(systemName: "arrow.down.circle")
+                            .overlay(alignment: .topTrailing) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .background(Circle().fill(.background).padding(-1.5))
+                                    .offset(x: 3, y: -2)
+                            }
+                    }
                 case .paused:
                     Label(L10n.downloadPaused, systemImage: "pause.circle")
                 case .failed:
@@ -122,6 +135,16 @@ extension ItemActionButtons {
         private func stateMenu(for download: Download) -> some View {
             switch download.state {
             case .queued, .downloading:
+                if download.state == .downloading {
+                    ProgressView(value: download.progress) {
+                        Text(L10n.downloading)
+                    }
+
+                    Text("\(Int(download.progress * 100))%")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
                 Button(L10n.pause, systemImage: "pause") {
                     manager.pause(download.id)
                 }
@@ -176,26 +199,23 @@ extension ItemActionButtons {
         }
 
         /// Play a completed download offline from its local file (issue #1789).
+        ///
+        /// The offline intent marker makes `MediaPlayerItemResolver` build the
+        /// player item straight from the local file + stored media source, so
+        /// no server round-trip (item fetch, playback-info, bitrate test or
+        /// stream URL) is attempted — this must work in airplane mode.
         private func playDownload(_ download: Download) {
-            let fileURL = download.fileURL
-            let baseItem = download.item
-            let mediaSource = download.mediaSource
-            let bitrate = download.options.bitrate
+            guard let userSession = Container.shared.currentUserSession() else { return }
 
-            let provider = MediaPlayerItemProvider(
-                item: baseItem,
-                mediaSource: mediaSource,
-                requestedBitrate: bitrate
-            ) { _, _ in
-                try await DownloadManager.makeOfflinePlaybackItem(
-                    item: baseItem,
-                    mediaSource: mediaSource,
-                    fileURL: fileURL,
-                    bitrate: bitrate
-                )
-            }
+            var intent = PlaybackIntent(item: download.item)
+            intent.offline = .init(fileURL: download.fileURL, mediaSource: download.mediaSource)
 
-            router.route(to: .videoPlayer(provider: provider))
+            let session = Container.shared.mediaPlayerManager().play(
+                intent: intent,
+                userSession: userSession
+            )
+
+            router.route(to: .videoPlayer(session: session))
         }
     }
 }

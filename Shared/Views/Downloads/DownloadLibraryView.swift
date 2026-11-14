@@ -98,7 +98,20 @@ private struct DownloadRow: View {
     private var statusText: some View {
         switch download.state {
         case .queued, .downloading:
-            Label(L10n.downloading, systemImage: "arrow.down")
+            VStack(alignment: .leading, spacing: 4) {
+                Label {
+                    Text(
+                        download.state == .downloading
+                            ? L10n.downloading + " — \(Int(download.progress * 100))%"
+                            : L10n.downloading
+                    )
+                } icon: {
+                    Image(systemName: "arrow.down")
+                }
+
+                ProgressView(value: download.progress)
+                    .progressViewStyle(.linear)
+            }
         case .completed:
             Label(L10n.downloaded, systemImage: "checkmark.circle")
         case .paused:

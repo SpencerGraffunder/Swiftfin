@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Foundation
 import JellyfinAPI
 
 @MainActor
@@ -14,6 +15,17 @@ struct PlaybackIntent {
     let entry: ItemEntry
     var queue: any MediaPlayerQueue?
     var configuration: MediaPlaybackConfiguration
+
+    /// Fork addition (issue #1789): set for playback of a completed local
+    /// download. When present, `MediaPlayerItemResolver` builds the player
+    /// item straight from the local file with zero server round-trips, so
+    /// playback works with no connectivity (airplane mode).
+    var offline: OfflinePlayback?
+
+    struct OfflinePlayback {
+        let fileURL: URL
+        let mediaSource: MediaSourceInfo
+    }
 
     var item: BaseItemDto {
         entry.snapshot

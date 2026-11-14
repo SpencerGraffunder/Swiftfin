@@ -114,6 +114,20 @@ final class ContentGroupViewModel<Provider: ContentGroupProvider>: ViewModel {
     private func resolveGroups() {
         let resolved = candidateGroups.filter(\._shouldBeResolved)
 
+        applyResolved(resolved)
+    }
+
+    /// A refresh race can transiently leave every group's paging state empty
+    /// (canceled or background reloads clear elements before refilling). Never
+    /// wipe a populated view into "no results" — keep the last-known groups
+    /// and mark a full rebuild for the next refresh (tab reappear, library
+    /// change, or pull-to-refresh).
+    private func applyResolved(_ resolved: [any ContentGroup]) {
+        if resolved.isEmpty, groups.isNotEmpty {
+            needsGroupRebuild = true
+            return
+        }
+
         if groups.map(\.id) != resolved.map(\.id) {
             groups = resolved
         }
@@ -163,6 +177,6 @@ final class ContentGroupViewModel<Provider: ContentGroupProvider>: ViewModel {
         observeGroups()
 
         // New groups may reuse IDs but own different view models
-        groups = candidateGroups.filter(\._shouldBeResolved)
+        applyResolved(candidateGroups.filter(\._shouldBeResolved))
     }
 }
