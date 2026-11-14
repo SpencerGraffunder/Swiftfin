@@ -166,10 +166,11 @@ jobs:
           TAG="$VERSION-$BUILD"
           FILE="out/$ASSET"
           ls -lh "$FILE"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$FILE" --clobber
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE" --repo "$GITHUB_REPOSITORY" --clobber
           else
             gh release create "$TAG" "$FILE" \
+              --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "Swiftfin $VERSION ($BUILD)" \
               --latest \
@@ -185,7 +186,7 @@ jobs:
                     | grep -v -x "$TAG" || true)
           for OLD in $OLD_TAGS; do
             echo "Pruning superseded release $OLD"
-            gh release delete "$OLD" --yes --cleanup-tag
+            gh release delete "$OLD" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
           done
 
       - name: Mirror .ipa to iCloud Drive
