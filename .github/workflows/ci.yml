@@ -40,10 +40,15 @@ jobs:
           # Re-add "Swiftfin tvOS" when needed; testflight.yml still builds it
           # on demand (dispatch with platform: tvOS).
 
-    runs-on: macos-26
+    # xcode-27 = GitHub-hosted macOS 27 image (Xcode 27.1 default). Bumped from
+    # macos-26/26.6 2026-11-14: MediaAccessibilityKit 0.4.0 (upstream dep) fails
+    # to compile on Xcode 26.6 ('sending' region-isolation error) and builds
+    # green on 27.1, same image testflight.yml already uses. Preview label, not
+    # Spec's Mac.
+    runs-on: xcode-27
 
     env:
-      XCODE_VERSION: "26.6"
+      XCODE_VERSION: "27.1"
       FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: "120"
       FASTLANE_XCODEBUILD_SETTINGS_RETRIES: "2"
 
