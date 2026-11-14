@@ -542,8 +542,27 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
             return
         }
 
+        // URLSession deletes `location` the moment this callback returns, so the
+        // file MUST be moved synchronously here. Handing the original URL to an
+        // async MainActor hop raced the deletion and failed every move
+        // ("CFNetworkDownload_*.tmp couldn't be moved"), marking downloads failed.
+        let stagingURL = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("swiftfin-staging-\(downloadID)-\(UUID().uuidString)")
+
+        do {
+            try FileManager.default.moveItem(at: location, to: stagingURL)
+        } catch {
+            Task { @MainActor in
+                self.manager.markFailed(downloadID)
+                self.manager.notifyTaskFinished(downloadID)
+            }
+
+            return
+        }
+
         Task { @MainActor in
-            self.manager.moveDownloadFile(downloadID, from: location)
+            self.manager.moveDownloadFile(downloadID, from: stagingURL)
             self.manager.notifyTaskFinished(downloadID)
         }
     }
