@@ -449,7 +449,7 @@ final class DownloadManager: ObservableObject {
 
             return userSession.client.url(
                 with: Paths.getVideoStream(itemID: itemID, parameters: parameters),
-                queryAPIKey: ***
+                queryAPIKey: true
             )
         } catch {
             logger.error("Failed to resolve download stream URL for \(download.id): \(error.localizedDescription)")
@@ -584,7 +584,7 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
     func urlSession(
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,
-        didWrite dataBytes: Int64,
+        didWriteData dataBytes: Int64,
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
