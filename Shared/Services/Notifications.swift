@@ -41,6 +41,7 @@ enum Notifications {
             if let payload = userInfo["payload"] as? Payload {
                 return payload
             }
+
             return nil
         }
 
@@ -123,6 +124,10 @@ extension Notifications.Key {
         Key("recordingTimersDidChange")
     }
 
+    static var savedFiltersDidChange: Key<Void> {
+        Key("savedFiltersDidChange")
+    }
+
     // MARK: - Server
 
     static var didConnectToServer: Key<ServerState> {
@@ -134,11 +139,6 @@ extension Notifications.Key {
     }
 
     // MARK: - User
-
-    /// - Payload: The ID of the user whose Profile Image changed.
-    static var didChangeUserProfile: Key<String> {
-        Key("didChangeUserProfile")
-    }
 
     static var didAddServerUser: Key<UserDto> {
         Key("didAddServerUser")
@@ -163,6 +163,10 @@ extension Notifications.Key {
     }
 
     // MARK: - UIApplication
+
+    static var applicationDidBecomeActive: Key<Void> {
+        Key(UIApplication.didBecomeActiveNotification)
+    }
 
     static var applicationDidEnterBackground: Key<Void> {
         Key(UIApplication.didEnterBackgroundNotification)
@@ -200,6 +204,12 @@ extension Notifications.Key {
                 .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
 
             return (type, options)
+        }
+    }
+
+    static var avAudioSessionRouteChange: Key<AVAudioSession.RouteChangeReason> {
+        Key(AVAudioSession.routeChangeNotification) { userInfo in
+            (userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt).flatMap(AVAudioSession.RouteChangeReason.init(rawValue:))
         }
     }
 }

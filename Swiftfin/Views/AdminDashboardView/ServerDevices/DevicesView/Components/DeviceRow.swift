@@ -6,7 +6,6 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
-import Defaults
 import FactoryKit
 import JellyfinAPI
 import SwiftUI
@@ -14,9 +13,6 @@ import SwiftUI
 extension DevicesView {
 
     struct DeviceRow: View {
-
-        @Default(.accentColor)
-        private var accentColor
 
         // MARK: - Environment Variables
 
@@ -46,7 +42,7 @@ extension DevicesView {
 
         // MARK: - Device Image View
 
-        @ViewBuilder
+        @ContentBuilder
         private var deviceImage: some View {
             ZStack {
                 device.type.clientColor
@@ -68,7 +64,7 @@ extension DevicesView {
 
         // MARK: - Row Content
 
-        @ViewBuilder
+        @ContentBuilder
         private var rowContent: some View {
             HStack {
                 VStack(alignment: .leading) {
@@ -104,6 +100,7 @@ extension DevicesView {
 
         // MARK: - Body
 
+        @ContentBuilder
         var body: some View {
             ListRow {
                 deviceImage

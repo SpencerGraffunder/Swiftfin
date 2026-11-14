@@ -24,27 +24,35 @@ struct ExperimentalSettingsView: View {
     @Default(.Experimental.videoPlayerEPG)
     private var isVideoPlayerEPGEnabled
 
+    #if os(iOS)
+    @Default(.Experimental.chromecast)
+    private var isChromecastEnabled
+    #endif
+
     @Injected(\.userSessionManager)
     private var userSessionManager: UserSessionManager
 
+    @ContentBuilder
     var body: some View {
         Form(systemImage: "flask") {
             // swiftlint:disable hard_coded_display_string
-            Toggle("MPV engine", isOn: $isMPVEnabled)
-
             Toggle("Live TV EPG", isOn: $isVideoPlayerEPGEnabled)
 
             #if os(iOS)
             Toggle("Auto switch connection", isOn: $isServerConnectionAutoSwitchEnabled)
+            Toggle("Chromecast", isOn: $isChromecastEnabled)
+                .onChange(of: isChromecastEnabled) {
+                    if isChromecastEnabled,
+                       !Defaults[.VideoPlayer.barActionButtons].contains(.playbackDestination),
+                       !Defaults[.VideoPlayer.menuActionButtons].contains(.playbackDestination) {
+                        Defaults[.VideoPlayer.barActionButtons].append(.playbackDestination)
+                    }
+                    ChromecastController.updateAvailability()
+                }
             #endif
 
             Toggle(L10n.downloads, isOn: $isDownloadsEnabled)
             // swiftlint:enable hard_coded_display_string
-        }
-        .onChange(of: isMPVEnabled) {
-            if !isMPVEnabled {
-                Defaults[.VideoPlayer.videoPlayerType] = .vlc
-            }
         }
         .onChange(of: isServerConnectionAutoSwitchEnabled) {
             if isServerConnectionAutoSwitchEnabled {

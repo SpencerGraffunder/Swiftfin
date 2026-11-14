@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import CollectionHStack
 import JellyfinAPI
 import SwiftUI
 
@@ -15,8 +16,11 @@ extension ItemView {
 
     struct ContentGroupScrollView: View {
 
-        @Environment(\.tabSafeAreaInsets)
-        private var tabSafeAreaInsets
+        @Environment(\.frameForParentView)
+        private var frameForParentView
+
+        @AdaptiveLayout
+        private var viewLayout
 
         @EnvironmentObject
         private var focusCoordinator: FocusCoordinator
@@ -33,15 +37,14 @@ extension ItemView {
 
         private var backgroundImageItem: BaseItemDto {
             if provider.item.type == .person || provider.item.type == .musicArtist,
-               let randomItem = provider.randomBackdropItem
-            {
+               let randomItem = provider.randomBackdropItem {
                 randomItem
             } else {
                 provider.item
             }
         }
 
-        @ViewBuilder
+        @ContentBuilder
         private var background: some View {
             AlternateLayoutView {
                 Color.clear
@@ -72,26 +75,35 @@ extension ItemView {
             .animation(.linear(duration: 0.2), value: isHeaderFocused)
         }
 
+        @ContentBuilder
+        private var scrollView: some View {
+            ScrollView {
+                ContentGroupVStack(groups: groups)
+                    .edgePadding(.bottom)
+                    .padding(.top, isEnhanced ? 0 : (frameForParentView[.tabView]?.safeAreaInsets.top ?? 0))
+            }
+        }
+
+        @ContentBuilder
         var body: some View {
             ZStack {
-                #if os(tvOS)
-                if isEnhanced {
+                if viewLayout.isLarge, isEnhanced {
                     background
                         .ignoresSafeArea()
                 }
-                #endif
 
-                ScrollView {
-                    ContentGroupVStack(groups: groups)
-                        .edgePadding(.bottom)
-                        .padding(.top, isEnhanced ? 0 : tabSafeAreaInsets.top)
+                Group {
+                    #if os(tvOS)
+                    CollectionHStackFocusScope {
+                        scrollView
+                            .scrollClipDisabled()
+                    }
+                    #else
+                    scrollView
+                    #endif
                 }
                 .trackingFrame(for: .scrollView)
-                #if os(tvOS)
-                .ignoresSafeArea(.container, edges: isEnhanced ? .all : [.horizontal, .top])
-                #else
-                .ignoresSafeArea(edges: isEnhanced ? .all : .horizontal)
-                #endif
+                .ignoresSafeArea(.container, edges: viewLayout.value(standard: [], large: isEnhanced ? .all : [.horizontal, .top]))
                 .scrollIndicators(.hidden)
             }
         }

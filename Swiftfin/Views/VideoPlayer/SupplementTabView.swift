@@ -12,21 +12,22 @@ import UIKit
 /// `TabView` has an "overscroll" bug on some index selections, workaround with manual `UIPageViewController`
 struct SupplementTabView<Content: View>: PlatformViewControllerRepresentable {
 
-    let data: [any MediaPlayerSupplement]
+    let data: [any VideoPlayerSupplement]
     let selection: Binding<String?>
 
-    @ViewBuilder
-    let content: (any MediaPlayerSupplement) -> Content
+    @ContentBuilder
+    let content: (any VideoPlayerSupplement) -> Content
 
     func makeUIViewController(context: Context) -> UIViewController {
         let controller = UIViewController()
         controller.view.backgroundColor = .clear
         context.coordinator.container = controller
+
         return controller
     }
 
     func updateUIViewController(_ controller: UIViewController, context: Context) {
-        context.coordinator.sync(data: data, selection: selection, content: content)
+        context.coordinator.sync(data: data, selection: selection, environment: context.environment, content: content)
     }
 
     static func dismantleUIViewController(_: UIViewController, coordinator: Coordinator) {
@@ -41,7 +42,7 @@ struct SupplementTabView<Content: View>: PlatformViewControllerRepresentable {
 
         weak var container: UIViewController?
 
-        private var hosts: [String: HostingController<Content>] = [:]
+        private var hosts: [String: HostingController<HostingEnvironmentView<Content>>] = [:]
         private var ids: [String] = []
         private var pageController: UIPageViewController?
         private var requestedID: String?
@@ -54,27 +55,32 @@ struct SupplementTabView<Content: View>: PlatformViewControllerRepresentable {
         }
 
         func sync(
-            data: [any MediaPlayerSupplement],
+            data: [any VideoPlayerSupplement],
             selection: Binding<String?>,
-            @ViewBuilder content: (any MediaPlayerSupplement) -> Content
+            environment: EnvironmentValues,
+            @ContentBuilder content: (any VideoPlayerSupplement) -> Content
         ) {
             guard container != nil else { return }
 
             self.selection = selection
             let newIDs = data.map(\.id)
             let trackChanged = ids != newIDs
+
             if trackChanged {
                 selectionRevision += 1
+
                 // Clear UIKit's adjacent-page cache before releasing hosts that left the track.
                 removePageController()
             }
+
             ids = newIDs
             hosts = hosts.filter { newIDs.contains($0.key) }
+
             for supplement in data {
                 if let host = hosts[supplement.id] {
-                    host.content = content(supplement)
+                    host.content = HostingEnvironmentView(content: content(supplement), environment: environment)
                 } else {
-                    let host = HostingController(content: content(supplement))
+                    let host = HostingController(content: HostingEnvironmentView(content: content(supplement), environment: environment))
                     host.disableSafeArea = true
                     host.view.backgroundColor = .clear
                     hosts[supplement.id] = host
@@ -107,14 +113,17 @@ struct SupplementTabView<Content: View>: PlatformViewControllerRepresentable {
             page.view.translatesAutoresizingMaskIntoConstraints = false
             container.addChild(page)
             container.view.addSubview(page.view)
+
             NSLayoutConstraint.activate([
                 page.view.leadingAnchor.constraint(equalTo: container.view.leadingAnchor),
                 page.view.trailingAnchor.constraint(equalTo: container.view.trailingAnchor),
                 page.view.topAnchor.constraint(equalTo: container.view.topAnchor),
                 page.view.bottomAnchor.constraint(equalTo: container.view.bottomAnchor),
             ])
+
             page.didMove(toParent: container)
             pageController = page
+
             return page
         }
 
@@ -125,9 +134,11 @@ struct SupplementTabView<Content: View>: PlatformViewControllerRepresentable {
             page.delegate = nil
             page.dataSource = nil
             remove(page)
+
             for host in hosts.values {
                 remove(host)
             }
+
             swipeSelection = nil
         }
 
@@ -142,6 +153,7 @@ struct SupplementTabView<Content: View>: PlatformViewControllerRepresentable {
 
         private func selectCurrent() {
             let newID = selection.wrappedValue
+
             if requestedID != newID {
                 selectionRevision += 1
                 requestedID = newID
@@ -158,15 +170,14 @@ struct SupplementTabView<Content: View>: PlatformViewControllerRepresentable {
                 return
             }
             guard swipeSelection == nil,
-                  let page = makePageController()
-            else { return }
-            guard page.viewControllers?.first !== target else { return }
+                  let page = makePageController(),
+                  page.viewControllers?.first !== target else { return }
 
             let direction = direction(from: page.viewControllers?.first, to: targetID)
-            // The container can change height at the same time (regular/expanded
-            // supplements). Animating UIKit's page scroll during that resize can
-            // leave its visible page behind the selection. Only user swipes page
-            // interactively; explicit selections are installed synchronously.
+
+            // Resizing between regular and expanded supplements can leave an animated
+            // page scroll behind the selection. Install explicit selections synchronously
+            // and reserve interactive paging for user swipes.
             page.setViewControllers(
                 [target],
                 direction: direction,
@@ -234,12 +245,12 @@ struct SupplementTabView<Content: View>: PlatformViewControllerRepresentable {
                swipeSelection.revision == selectionRevision,
                selection.wrappedValue == swipeSelection.id,
                let visible = controller.viewControllers?.first,
-               let newID = hostID(for: visible)
-            {
+               let newID = hostID(for: visible) {
                 requestedID = newID
                 selectionRevision += 1
                 selection.wrappedValue = newID
             }
+
             // UIKit still owns the page hierarchy while delivering this callback.
             DispatchQueue.main.async { [weak self, weak controller] in
                 guard let self, let controller, self.pageController === controller else { return }

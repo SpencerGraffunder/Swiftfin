@@ -19,13 +19,13 @@ struct EPGLoadableView<Content: View>: View {
 
     init(
         viewModel: EPGViewModel,
-        @ViewBuilder content: () -> Content
+        @ContentBuilder content: () -> Content
     ) {
         self.viewModel = viewModel
         self.content = content()
     }
 
-    @ViewBuilder
+    @ContentBuilder
     var body: some View {
         switch viewModel.state {
         case .initial, .refreshing:
@@ -88,6 +88,7 @@ struct EPGContentView: View {
         return "\(start.formatted(date: .omitted, time: .shortened)) \(String.bullet) \(program.displayTitle)"
     }
 
+    @ContentBuilder
     var body: some View {
         AlternateLayoutView {
             Color.clear
@@ -132,6 +133,7 @@ struct EPGContentView: View {
             }
             .ignoresSafeArea(edges: .bottom)
         }
+        .trackingFrame(for: .layoutContainer)
         .confirmationDialog(
             L10n.programs,
             isPresented: isPresentingGroup,

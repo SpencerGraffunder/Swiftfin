@@ -11,6 +11,9 @@ import SwiftUI
 
 struct SearchView: View {
 
+    @AdaptiveLayout
+    private var viewLayout
+
     @Default(.Customization.Search.enabledDrawerFilters)
     private var enabledDrawerFilters
 
@@ -33,7 +36,7 @@ struct SearchView: View {
     @TabItemSelected
     private var tabItemSelected
 
-    @ViewBuilder
+    @ContentBuilder
     private var suggestionsView: some View {
         VStack(spacing: 20) {
             ForEach(viewModel.suggestions) { item in
@@ -46,28 +49,32 @@ struct SearchView: View {
                 #endif
             }
         }
+        .multilineTextAlignment(.center)
     }
 
+    @ContentBuilder
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
                 #if os(tvOS)
                 if enabledDrawerFilters.isNotEmpty {
+                    let availableTypes = viewModel.filterViewModel.availableFilterTypes(from: enabledDrawerFilters)
+
                     ScrollView(.horizontal) {
                         HStack(spacing: 20) {
-                            FilterTrack(viewModel: viewModel.filterViewModel, types: enabledDrawerFilters, focus: $focusedFilter)
+                            FilterTrack(viewModel: viewModel.filterViewModel, types: availableTypes, focus: $focusedFilter)
                         }
                     }
                     .scrollClipDisabled()
                     .scrollIndicators(.hidden)
-                    .frame(height: 64)
+                    .frame(height: FilterTrack.metrics(for: viewLayout).minimumHeight)
                     .coordinatedFocusScope(
                         $focusedFilter,
-                        values: enabledDrawerFilters.map(FilterTrack.FocusTarget.filter) +
-                            (viewModel.filterViewModel.hasActiveFilters ? [.reset] : [])
+                        values: availableTypes.map(FilterTrack.FocusTarget.filter)
+                            .appending(.options, if: viewModel.filterViewModel.hasFilterOptions)
                     )
                     .edgePadding(.horizontal)
-                    .padding(.vertical, EdgeInsets.itemSpacing)
+                    .padding(.vertical, viewLayout.itemSpacing)
                 }
                 #endif
 
@@ -97,7 +104,8 @@ struct SearchView: View {
                 .focusSection()
             }
         }
-        .ignoresSafeArea(edges: .horizontal)
+        .ignoresSafeArea(edges: viewLayout.scrollContentEdges(extendsTop: false))
+        .defaultScrollAnchor(viewLayout.isLarge || viewModel.canSearch ? .top : .center, for: .alignment)
         .scrollIndicators(.hidden)
         .animation(.linear(duration: 0.2), value: viewModel.state)
         .ignoresSafeArea(.keyboard)

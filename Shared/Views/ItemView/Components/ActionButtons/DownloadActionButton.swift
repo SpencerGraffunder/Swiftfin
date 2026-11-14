@@ -56,6 +56,7 @@ extension ItemActionButtons {
             item.mediaSources?.first?.supportedBitrates ?? PlaybackBitrate.videoBitrates
         }
 
+        @ContentBuilder
         var body: some View {
             Menu {
                 if let download {
@@ -73,16 +74,46 @@ extension ItemActionButtons {
 
         // MARK: - Label
 
-        @ViewBuilder
+        @ContentBuilder
         private var downloadLabel: some View {
             if let download {
                 switch download.state {
                 case .downloading, .queued:
-                    Label(L10n.downloading, systemImage: "arrow.down.circle")
+                    // The bar renders icon-only, so the progress ring lives
+                    // inside the glyph: same arrow.down.circle with a trim
+                    // ring tracing the download's completion.
+                    Label {
+                        Text(L10n.downloadProgress(Int(download.progress * 100)))
+                    } icon: {
+                        Image(systemName: "arrow.down.circle")
+                            .overlay {
+                                Circle()
+                                    .trim(from: 0, to: CGFloat(max(0.02, download.progress)))
+                                    .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                                    .foregroundStyle(.tint)
+                                    .rotationEffect(.degrees(-90))
+                            }
+                    }
+
                 case .completed:
-                    Label(L10n.downloaded, systemImage: "checkmark.circle.fill")
+                    // The download glyph stays visible with a small offset
+                    // check badge on top, instead of swapping to a bare
+                    // checkmark whose meaning was unclear.
+                    Label {
+                        Text(L10n.downloaded)
+                    } icon: {
+                        Image(systemName: "arrow.down.circle")
+                            .overlay(alignment: .topTrailing) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .background(Circle().fill(.background).padding(-1.5))
+                                    .offset(x: 3, y: -2)
+                            }
+                    }
+
                 case .paused:
                     Label(L10n.downloadPaused, systemImage: "pause.circle")
+
                 case .failed:
                     Label(L10n.downloadFailed, systemImage: "exclamationmark.circle")
                 }
@@ -93,7 +124,7 @@ extension ItemActionButtons {
 
         // MARK: - Menus
 
-        @ViewBuilder
+        @ContentBuilder
         private var newDownloadMenu: some View {
             Section(L10n.downloadOptions) {
                 Picker(L10n.source, selection: $selectedMethod) {
@@ -118,10 +149,20 @@ extension ItemActionButtons {
             .disabled(item.mediaSources?.isEmpty == true)
         }
 
-        @ViewBuilder
+        @ContentBuilder
         private func stateMenu(for download: Download) -> some View {
             switch download.state {
             case .queued, .downloading:
+                if download.state == .downloading {
+                    ProgressView(value: download.progress) {
+                        Text(L10n.downloading)
+                    }
+
+                    Text(L10n.downloadProgress(Int(download.progress * 100)))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
                 Button(L10n.pause, systemImage: "pause") {
                     manager.pause(download.id)
                 }
@@ -176,26 +217,23 @@ extension ItemActionButtons {
         }
 
         /// Play a completed download offline from its local file (issue #1789).
+        ///
+        /// The offline intent marker makes `MediaPlayerItemResolver` build the
+        /// player item straight from the local file + stored media source, so
+        /// no server round-trip (item fetch, playback-info, bitrate test or
+        /// stream URL) is attempted — this must work in airplane mode.
         private func playDownload(_ download: Download) {
-            let fileURL = download.fileURL
-            let baseItem = download.item
-            let mediaSource = download.mediaSource
-            let bitrate = download.options.bitrate
+            guard let userSession = Container.shared.currentUserSession() else { return }
 
-            let provider = MediaPlayerItemProvider(
-                item: baseItem,
-                mediaSource: mediaSource,
-                requestedBitrate: bitrate
-            ) { _, _ in
-                try await DownloadManager.makeOfflinePlaybackItem(
-                    item: baseItem,
-                    mediaSource: mediaSource,
-                    fileURL: fileURL,
-                    bitrate: bitrate
-                )
-            }
+            var intent = PlaybackIntent(item: download.item)
+            intent.offline = .init(fileURL: download.fileURL, mediaSource: download.mediaSource)
 
-            router.route(to: .videoPlayer(provider: provider))
+            let session = Container.shared.mediaPlayerManager().play(
+                intent: intent,
+                userSession: userSession
+            )
+
+            router.route(to: .videoPlayer(session: session))
         }
     }
 }

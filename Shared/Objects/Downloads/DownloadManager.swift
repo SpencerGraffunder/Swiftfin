@@ -35,22 +35,22 @@ final class DownloadManager: ObservableObject {
 
     private var session: URLSession?
 
-    // The download task currently running for each download ID (used for
-    // cancellation). MainActor-isolated (the manager is @MainActor).
+    /// The download task currently running for each download ID (used for
+    /// cancellation). MainActor-isolated (the manager is @MainActor).
     private var activeTasks: [String: URLSessionDownloadTask] = [:]
 
-    // Maps an active download task to the download ID. `NSMapTable` is
-    // thread-safe, so the nonisolated session delegate can read it from
-    // URLSession's background queue. The task object is used as the key
-    // because `NSMapTable` requires object (reference) types.
-    fileprivate static let taskIDMap = NSMapTable<AnyObject, AnyObject>(
+    /// Maps an active download task to the download ID. `NSMapTable` is
+    /// thread-safe, so the nonisolated session delegate can read it from
+    /// URLSession's background queue. The task object is used as the key
+    /// because `NSMapTable` requires object (reference) types.
+    fileprivate nonisolated(unsafe) static let taskIDMap = NSMapTable<AnyObject, AnyObject>(
         keyOptions: .strongMemory,
         valueOptions: .strongMemory
     )
 
-    // In-memory resume data so a paused download can be resumed without
-    // starting over.
-    private var resumeDataByDownloadID: [String: Data] = [:]
+    /// In-memory resume data so a paused download can be resumed without
+    /// starting over.
+    fileprivate var resumeDataByDownloadID: [String: Data] = [:]
 
     private var hasStarted = false
 
@@ -105,7 +105,40 @@ final class DownloadManager: ObservableObject {
 
         await loadQueue()
         reconcileWithDisk()
+        await remapLiveTasks(in: session)
         processQueue()
+    }
+
+    /// Relaunch reconciliation for background sessions (issue #1788 QA pass).
+    ///
+    /// `taskIDMap` is in-memory only, so after a relaunch the restored
+    /// background tasks were un-mappable: progress ticks were dropped, a
+    /// finished file got discarded on arrival, and persisted `.downloading`
+    /// entries counted as active forever (starving the queue). Tasks stamped
+    /// with `taskDescription` remap themselves; zombie `.downloading` entries
+    /// with no live task go back to `.queued`.
+    private func remapLiveTasks(in session: URLSession) async {
+        let restored = await session.allTasks.compactMap { $0 as? URLSessionDownloadTask }
+
+        var liveIDs = Set<String>()
+        for task in restored {
+            guard let downloadID = task.taskDescription else { continue }
+
+            activeTasks[downloadID] = task
+            Self.taskIDMap.setObject(downloadID as NSString, forKey: task)
+            liveIDs.insert(downloadID)
+        }
+
+        var requeued = false
+        for index in downloads.indices
+            where downloads[index].state == .downloading && !liveIDs.contains(downloads[index].id) {
+            downloads[index].state = .queued
+            requeued = true
+        }
+
+        if requeued {
+            await persist()
+        }
     }
 
     private func observeLowPowerState() {
@@ -186,13 +219,12 @@ final class DownloadManager: ObservableObject {
     }
 
     func pause(_ downloadID: String) {
-        guard let index = index(of: downloadID), downloads[index].state == .downloading else { return }
+        // `.queued` also accepts the window while resolveStreamURL is still
+        // running and no URLSession task exists yet — pausing there is legal
+        // and must not silently no-op.
+        guard let index = index(of: downloadID), downloads[index].state == .downloading || downloads[index].state == .queued else { return }
 
-        cancelActiveTask(for: downloadID) { [weak self] data in
-            Task { @MainActor [weak self] in
-                self?.resumeDataByDownloadID[downloadID] = data
-            }
-        }
+        cancelActiveTask(for: downloadID, pausing: true)
 
         downloads[index].state = .paused
         Task { await persist() }
@@ -228,7 +260,7 @@ final class DownloadManager: ObservableObject {
 
         let download = downloads[index]
 
-        cancelActiveTask(for: downloadID) { _ in }
+        cancelActiveTask(for: downloadID, pausing: false)
 
         if !keepMediaFile {
             try? FileManager.default.removeItem(at: download.fileURL)
@@ -255,6 +287,12 @@ final class DownloadManager: ObservableObject {
             resume(download.id)
         }
     }
+
+    /// Downloads whose in-flight task was intentionally paused/cancelled.
+    /// Background sessions deliver resume data only through
+    /// `didCompleteWithError`, so completion must consult this set instead of
+    /// blindly marking the download failed (issue #1788 QA pass).
+    fileprivate var deliberateCancellationIDs: Set<String> = []
 
     // MARK: - Delegate callbacks (called on MainActor)
 
@@ -346,6 +384,9 @@ final class DownloadManager: ObservableObject {
             self.downloads[index].state = .downloading
             self.activeTasks[download.id] = task
             Self.taskIDMap.setObject(download.id as NSString, forKey: task)
+            // Background-session tasks persist across relaunches; the
+            // description rides along so they stay mappable (issue #1788).
+            task.taskDescription = download.id
 
             task.resume()
 
@@ -356,21 +397,60 @@ final class DownloadManager: ObservableObject {
     /// Resolve the stream URL to download, reusing the playback pipeline's
     /// resolution so the downloaded file matches what the player would use.
     private func resolveStreamURL(for download: Download) async -> URL? {
-        guard let userSession = Container.shared.currentUserSession() else { return nil }
-
-        let compatibilityMode: PlaybackCompatibility = download.options.method == .transcoded
-            ? .mostCompatible
-            : .directPlay
+        guard let userSession = Container.shared.currentUserSession(), let itemID = download.item.id else { return nil }
 
         do {
-            let playbackItem = try await MediaPlayerItem.build(
-                for: download.item,
-                mediaSource: download.mediaSource,
-                requestedBitrate: download.options.bitrate,
-                compatibilityMode: compatibilityMode
+            var configuration = MediaPlaybackConfiguration()
+            configuration.requestedBitrate = download.options.bitrate
+            configuration.compatibilityMode = download.options.method == .transcoded
+                ? .mostCompatible
+                : .directPlay
+
+            let deviceProfile = DeviceProfile.build(
+                for: Defaults[.VideoPlayer.mediaPlayerType],
+                configuration: configuration,
+                mediaSource: download.mediaSource
             )
 
-            return playbackItem.url
+            var playbackInfo = PlaybackInfoDto()
+            playbackInfo.isAutoOpenLiveStream = true
+            playbackInfo.deviceProfile = deviceProfile
+            playbackInfo.mediaSourceID = download.mediaSource.id
+            playbackInfo.userID = userSession.user.id
+            if download.options.bitrate != .auto {
+                playbackInfo.maxStreamingBitrate = download.options.bitrate.rawValue
+            }
+            if download.options.method == .transcoded {
+                playbackInfo.enableDirectPlay = false
+                playbackInfo.enableDirectStream = false
+                playbackInfo.enableTranscoding = true
+            }
+
+            let response = try await userSession.send(
+                Paths.getPostedPlaybackInfo(itemID: itemID, playbackInfo)
+            )
+
+            let sources = response.value.mediaSources ?? []
+            let resolvedSource = sources.first(property: \.id, equalTo: download.mediaSource.id) ?? sources.first
+
+            guard let resolvedSource, let playSessionID = response.value.playSessionID else { return nil }
+
+            if let transcodingPath = resolvedSource.transcodingURL {
+                return userSession.client.url(path: transcodingPath)
+            }
+
+            let parameters = Paths.GetVideoStreamParameters(
+                isStatic: true,
+                tag: resolvedSource.eTag ?? download.item.etag,
+                playSessionID: playSessionID,
+                mediaSourceID: resolvedSource.id ?? itemID,
+                liveStreamID: resolvedSource.liveStreamID
+            )
+
+            return userSession.client.url(
+                with: Paths.getVideoStream(itemID: itemID, parameters: parameters),
+                queryAPIKey: true
+            )
         } catch {
             logger.error("Failed to resolve download stream URL for \(download.id): \(error.localizedDescription)")
 
@@ -378,43 +458,30 @@ final class DownloadManager: ObservableObject {
         }
     }
 
-    // MARK: - Offline playback
-
-    /// Builds a `MediaPlayerItem` that plays a locally downloaded file, reusing the
-    /// same playback pipeline (device profile, track handling) as online playback
-    /// (issue #1789).
-    static func makeOfflinePlaybackItem(
-        item: BaseItemDto,
-        mediaSource: MediaSourceInfo,
-        fileURL: URL,
-        bitrate: PlaybackBitrate
-    ) -> MediaPlayerItem {
-        let deviceProfile = DeviceProfile.build(
-            for: Defaults[.VideoPlayer.videoPlayerType],
-            compatibilityMode: .directPlay
-        )
-
-        return MediaPlayerItem(
-            baseItem: item,
-            mediaSource: mediaSource,
-            playSessionID: UUID().uuidString,
-            url: fileURL,
-            requestedBitrate: bitrate,
-            deviceProfile: deviceProfile
-        )
-    }
-
     // MARK: - Task helpers
 
-    private func cancelActiveTask(for downloadID: String, onCancelling: @escaping (Data) -> Void) {
-        guard let task = activeTasks.removeValue(forKey: downloadID) else {
-            onCancelling(Data())
+    private func cancelActiveTask(for downloadID: String, pausing: Bool) {
+        // Plain cancel(): background sessions don't support
+        // cancel(byProducingResumeData:). The mapping stays alive until
+        // `didCompleteWithError` runs so resume data can be captured there.
+        guard let task = activeTasks[downloadID] else {
+            activeTasks.removeValue(forKey: downloadID)
+            if pausing {
+                deliberateCancellationIDs.remove(downloadID)
+            }
 
             return
         }
 
-        Self.taskIDMap.removeObject(forKey: task)
-        task.cancel { onCancelling($0 ?? Data()) }
+        if pausing {
+            deliberateCancellationIDs.insert(downloadID)
+        } else {
+            activeTasks.removeValue(forKey: downloadID)
+            Self.taskIDMap.removeObject(forKey: task)
+            deliberateCancellationIDs.remove(downloadID)
+        }
+
+        task.cancel()
     }
 
     // MARK: - Persistence (CoreStore)
@@ -464,8 +531,7 @@ final class DownloadManager: ObservableObject {
 
         for index in downloads.indices {
             if downloads[index].state == .completed,
-               !fileManager.fileExists(atPath: downloads[index].fileURL.path)
-            {
+               !fileManager.fileExists(atPath: downloads[index].fileURL.path) {
                 downloads[index].state = .failed
                 downloads[index].progress = 0
                 changed = true
@@ -518,7 +584,7 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
     func urlSession(
         _ session: URLSession,
         downloadTask: URLSessionDownloadTask,
-        didWrite dataBytes: Int64,
+        didWriteData dataBytes: Int64,
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
@@ -567,16 +633,29 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
         }
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: any Error?) {
         guard let downloadID = downloadID(for: task), let error else { return }
 
+        // Pause/cancel also surfaces here (background sessions report the
+        // cancellation as an error, with resume data in the userInfo).
+        let nsError = error as NSError
+        let resumeData = nsError.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
+
         Task { @MainActor in
-            self.manager.markFailed(downloadID)
+            if self.manager.deliberateCancellationIDs.contains(downloadID) {
+                self.manager.deliberateCancellationIDs.remove(downloadID)
+                if let resumeData {
+                    self.manager.resumeDataByDownloadID[downloadID] = resumeData
+                }
+            } else {
+                self.manager.markFailed(downloadID)
+            }
+
             self.manager.notifyTaskFinished(downloadID)
         }
     }
 
     private func downloadID(for task: URLSessionTask) -> String? {
-        DownloadManager.taskIDMap.object(forKey: task) as? String
+        (DownloadManager.taskIDMap.object(forKey: task) as? String) ?? task.taskDescription
     }
 }

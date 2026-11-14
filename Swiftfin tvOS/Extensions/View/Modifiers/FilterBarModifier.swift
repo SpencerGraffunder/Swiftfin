@@ -11,6 +11,9 @@ import SwiftUI
 
 struct FilterBarModifier: ViewModifier {
 
+    @AdaptiveLayout
+    private var viewLayout
+
     @Default(.Customization.Library.letterPickerOrientation)
     private var letterPickerOrientation
 
@@ -26,31 +29,39 @@ struct FilterBarModifier: ViewModifier {
         letterPickerOrientation == .trailing ? .leading : .trailing
     }
 
-    @ViewBuilder
+    private var filterDiameter: CGFloat {
+        FilterTrack.metrics(for: viewLayout).minimumHeight
+    }
+
+    @ContentBuilder
     private var filters: some View {
+        let availableTypes = viewModel.availableFilterTypes(from: types)
+
         VStack(spacing: 20) {
             ForEach(subviews: FilterTrack(
                 viewModel: viewModel,
-                types: types,
+                types: availableTypes,
                 focus: $focusedFilter,
                 style: .compact,
                 iconEdge: edge
             )) { button in
                 Color.clear
-                    .frame(width: 64, height: 64)
+                    .frame(width: filterDiameter, height: filterDiameter)
                     .overlay(alignment: edge == .leading ? .leading : .trailing) {
                         button
                     }
             }
         }
         .scrollIfLargerThanContainer()
-        .frame(width: 64)
+        .frame(width: filterDiameter)
         .coordinatedFocusScope(
             $focusedFilter,
-            values: types.map(FilterTrack.FocusTarget.filter) + (viewModel.hasActiveFilters ? [.reset] : [])
+            values: availableTypes.map(FilterTrack.FocusTarget.filter)
+                .appending(.options, if: viewModel.hasFilterOptions)
         )
     }
 
+    @ContentBuilder
     func body(content: Content) -> some View {
         if types.isEmpty {
             content
@@ -60,7 +71,7 @@ struct FilterBarModifier: ViewModifier {
                 .safeAreaInset(edge: edge, alignment: .center, spacing: 0) {
                     filters
                         .coordinatedFocus(.secondary)
-                        .padding(edge.asEdgeSet, EdgeInsets.itemSpacing)
+                        .padding(edge.asEdgeSet, viewLayout.itemSpacing)
                 }
                 .ignoresSafeArea(.all, edges: edge.asEdgeSet)
         }

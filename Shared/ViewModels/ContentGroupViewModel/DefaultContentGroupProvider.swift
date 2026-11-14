@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Combine
 import Defaults
 import FactoryKit
 import Foundation
@@ -13,19 +14,31 @@ import JellyfinAPI
 
 struct DefaultContentGroupProvider: ContentGroupProvider {
 
-    @Injected(\.currentUserSession)
-    var userSession: UserSession?
+    /// Resolved fresh on every access. `@Injected` stores its resolution at
+    /// init, and this provider lives for the whole process inside the static
+    /// tab coordinator — a stored injection would keep serving a dead
+    /// `UserSession` after a session swap (issue QA pass: home stuck empty).
+    var userSession: UserSession? {
+        Container.shared.currentUserSession()
+    }
 
     let displayTitle: String = L10n.home
     let id: String = "default-content-group-provider"
 
+    var refreshRequests: AnyPublisher<Void, Never> {
+        userSession?.userLibraryChanges ?? Combine.Empty().eraseToAnyPublisher()
+    }
+
     func makeGroups(environment: Empty) async throws -> [any ContentGroup] {
-        guard let userSession else { return [] }
+        // A nil session is a failure to retry against, not "no content":
+        // returning [] here would render "No results" instead of a
+        // retryable error state.
+        guard let userSession else { throw ErrorMessage(L10n.unknownError) }
 
         let parameters = Paths.GetUserViewsParameters(userID: userSession.user.id)
         let userViewsPath = Paths.getUserViews(parameters: parameters)
         let userViews = try await userSession.send(userViewsPath)
-        let excludedLibraryIDs = userSession.user.data.configuration?.latestItemsExcludes ?? []
+        let excludedLibraryIDs = userSession.userData.configuration?.latestItemsExcludes ?? []
 
         let resolvedUserViews = (userViews.value.items ?? [])
             .subtracting(excludedLibraryIDs, using: \.id)
@@ -44,7 +57,6 @@ struct DefaultContentGroupProvider: ContentGroupProvider {
 
     @ContentGroupBuilder
     private func _makeGroups(userViews: [BaseItemDto]) -> [any ContentGroup] {
-
         #if os(tvOS)
         let cinematicSelectionContentGroup = CinematicSelectionContentGroup(
             resumeLibrary: ResumeItemsLibrary(mediaTypes: [.video]),

@@ -29,6 +29,7 @@ struct CinematicSelectionContentGroup: ContentGroup {
         )
     }
 
+    @ContentBuilder
     func body(with viewModel: CinematicSelectionContentGroupViewModel) -> some View {
         SelectionView(viewModel: viewModel)
     }
@@ -54,23 +55,18 @@ struct CinematicSelectionContentGroup: ContentGroup {
                     .logo,
                     itemID: item.parentLogoItemID,
                     tag: item.parentLogoImageTag,
-                    environment: ImageSourceOptions(
-                        maxWidth: CinematicSelectionLayout.logoMaxWidth,
-                        maxHeight: CinematicSelectionLayout.logoMaxHeight
-                    )
+                    environment: ImageSourceOptions(maxHeight: CinematicSelectionLayout.logoMaxHeight)
                 )
             } else {
                 item.imageSource(
                     .logo,
                     itemID: item.id,
-                    environment: ImageSourceOptions(
-                        maxWidth: CinematicSelectionLayout.logoMaxWidth,
-                        maxHeight: CinematicSelectionLayout.logoMaxHeight
-                    )
+                    environment: ImageSourceOptions(maxHeight: CinematicSelectionLayout.logoMaxHeight)
                 )
             }
         }
 
+        @ContentBuilder
         var body: some View {
             let items = viewModel.hasResumeItems ? viewModel.resumeViewModel.elements.elements : viewModel.recentlyAddedViewModel.elements
                 .elements
@@ -81,18 +77,25 @@ struct CinematicSelectionContentGroup: ContentGroup {
                 router.route(to: .item(item: item.snapshot))
             } topContent: { item in
                 ImageView(itemSelectorImageSource(for: item.snapshot))
+                    .image { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(height: CinematicSelectionLayout.logoMaxHeight)
+                    }
                     .placeholder { _ in
                         EmptyView()
                     }
                     .failure {
                         Text(item.displayTitle)
+                            .fixedSize(horizontal: false, vertical: true)
                             .font(.largeTitle)
                             .fontWeight(.semibold)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .foregroundStyle(.primary)
                     }
-                    .edgePadding(.leading)
-                    .aspectRatio(contentMode: .fit)
-                    .frame(height: CinematicSelectionLayout.logoMaxHeight, alignment: .bottomLeading)
-                    .frame(maxWidth: CinematicSelectionLayout.logoMaxWidth)
+                    .edgePadding(.horizontal)
             }
             .preference(
                 key: ContentGroupCustomizationKey.self,
@@ -111,6 +114,7 @@ struct CinematicRecentlyAddedContentGroup: ContentGroup {
         viewModel.hasResumeItems && viewModel.recentlyAddedViewModel.elements.isNotEmpty
     }
 
+    @ContentBuilder
     func body(with viewModel: CinematicSelectionContentGroupViewModel) -> some View {
         PosterHStackLibrarySection(
             viewModel: viewModel.recentlyAddedViewModel,
@@ -190,5 +194,4 @@ final class CinematicSelectionContentGroupViewModel: ViewModel, WithRefresh {
 private enum CinematicSelectionLayout {
 
     static let logoMaxHeight: CGFloat = 100
-    static let logoMaxWidth: CGFloat = 450
 }

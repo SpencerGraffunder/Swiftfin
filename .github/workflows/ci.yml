@@ -21,7 +21,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 # Needed by the publish job to create GitHub Releases for the .ipa.
 permissions:
@@ -32,6 +32,7 @@ jobs:
     name: "Build 🔨"
     if: github.event.pull_request.draft == false
     strategy:
+      fail-fast: false
       matrix:
         scheme:
           - "Swiftfin"
@@ -39,10 +40,17 @@ jobs:
           # Re-add "Swiftfin tvOS" when needed; testflight.yml still builds it
           # on demand (dispatch with platform: tvOS).
 
-    runs-on: macos-26
+    # xcode-27 = GitHub-hosted macOS 27 image (Xcode 27.1 default). Bumped from
+    # macos-26/26.6 2026-11-14: MediaAccessibilityKit 0.4.0 (upstream dep) fails
+    # to compile on Xcode 26.6 ('sending' region-isolation error) and builds
+    # green on 27.1, same image testflight.yml already uses. Preview label, not
+    # Spec's Mac.
+    runs-on: xcode-27
 
     env:
-      XCODE_VERSION: "26.6"
+      XCODE_VERSION: "27.1"
+      FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: "120"
+      FASTLANE_XCODEBUILD_SETTINGS_RETRIES: "2"
 
     outputs:
       version: ${{ steps.package.outputs.version }}
@@ -77,13 +85,30 @@ jobs:
 
       - name: Build
         uses: nick-fields/retry@v4
+        env:
+          SCHEME: ${{ matrix.scheme }}
         with:
           max_attempts: 3
           retry_on: error
           timeout_minutes: 60
-          command: bundle exec fastlane buildLane \
-            scheme:"\"${{ matrix.scheme }}\"" \
-            xcodeVersion:${{ env.XCODE_VERSION }}
+          command: |
+            # Fork adjustment: no xcodeVersion argument. The self-hosted
+            # xcode-27 runner ships a single system Xcode and has no `xcodes`
+            # CLI, which fastlane's xcodes action requires. The system toolchain
+            # (Xcode 27.x) satisfies this tree; passing the version would fail.
+            bundle exec fastlane buildLane \
+              "scheme:$SCHEME"
+
+      - name: Save Swift packages
+        if: ${{ github.event_name == 'push' && steps.swift-packages.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            build/SourcePackages/checkouts
+            build/SourcePackages/repositories
+            build/SourcePackages/artifacts
+            build/SourcePackages/workspace-state.json
+          key: ${{ steps.swift-packages.outputs.cache-primary-key }}
 
       - name: Package unsigned IPA
         id: package
@@ -116,19 +141,6 @@ jobs:
           path: fastlane/build/*.ipa
           if-no-files-found: error
           compression-level: 0
-
-      # Populate the shared cache from main,
-      # PR caches are isolated to their merge ref
-      - name: Save Swift packages
-        if: ${{ github.event_name == 'push' && steps.swift-packages.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            build/SourcePackages/checkouts
-            build/SourcePackages/repositories
-            build/SourcePackages/artifacts
-            build/SourcePackages/workspace-state.json
-          key: ${{ steps.swift-packages.outputs.cache-primary-key }}
 
   publish:
     name: "Publish .ipa 🚀"

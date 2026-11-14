@@ -10,21 +10,21 @@ import SwiftUI
 
 struct ContentGroupVStack: View {
 
+    @AdaptiveLayout
+    private var viewLayout
+
     let groups: [any ContentGroup]
 
     private var spacing: CGFloat {
-        #if os(tvOS)
-        60
-        #else
-        20
-        #endif
+        viewLayout.value(standard: 20, large: 60)
     }
 
-    @ViewBuilder
+    @ContentBuilder
     private func makeGroupBody(_ group: some ContentGroup) -> some View {
         group.body(with: group.viewModel)
     }
 
+    @ContentBuilder
     var body: some View {
         VStack(alignment: .leading, spacing: spacing) {
             ForEach(groups, id: \.id) { group in

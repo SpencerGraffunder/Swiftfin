@@ -23,7 +23,7 @@ struct TabItem: Displayable, @MainActor Identifiable, @MainActor Hashable {
         id: String,
         title: String,
         systemImage: String,
-        @ViewBuilder content: () -> some View
+        @ContentBuilder content: () -> some View
     ) {
         self.content = AnyView(content())
         self.id = id
@@ -97,7 +97,7 @@ extension TabItem {
                     staticFilters: filters
                 )
             )
-            .if(UIDevice.isTV) { view in
+            .if(ViewLayout.platformDefault.isLarge) { view in
                 view.toolbar(.hidden, for: .navigationBar)
             }
         }
@@ -110,7 +110,7 @@ extension TabItem {
             systemImage: "rectangle.stack.fill"
         ) {
             PagingLibraryView(library: UserViewLibrary())
-                .if(UIDevice.isTV) { view in
+                .if(ViewLayout.platformDefault.isLarge) { view in
                     view.toolbar(.hidden, for: .navigationBar)
                 }
         }
@@ -133,7 +133,7 @@ extension TabItem {
             systemImage: "magnifyingglass"
         ) {
             SearchView()
-                .if(UIDevice.isTV) { view in
+                .if(ViewLayout.platformDefault.isLarge) { view in
                     view.toolbar(.hidden, for: .navigationBar)
                 }
         }

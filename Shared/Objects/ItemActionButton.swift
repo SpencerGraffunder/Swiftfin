@@ -14,6 +14,7 @@ enum ItemActionButton: String, CaseIterable, Displayable, Equatable, Identifiabl
     case favorited
     case trailers
     case playback
+    case shuffle
     case record
     case subtitles
     case refresh
@@ -33,6 +34,8 @@ enum ItemActionButton: String, CaseIterable, Displayable, Equatable, Identifiabl
             L10n.trailers
         case .playback:
             L10n.playback
+        case .shuffle:
+            L10n.shuffle
         case .record:
             L10n.record
         case .refresh:
@@ -64,6 +67,8 @@ enum ItemActionButton: String, CaseIterable, Displayable, Equatable, Identifiabl
             "movieclapper"
         case .playback:
             "list.and.film"
+        case .shuffle:
+            "shuffle"
         case .record:
             "record.circle.fill"
         case .refresh:
@@ -109,15 +114,16 @@ enum ItemActionButton: String, CaseIterable, Displayable, Equatable, Identifiabl
         .played,
         .favorited,
         .download,
+        .shuffle,
         .record,
         .trailers,
         .playback
     ]
 
-    // Note: `.download` lives in the bar defaults, not here — the bar and menu
-    // default sets stay disjoint so a visible bar button is never listed again
-    // in the "…" menu. When the bar overflows, `resolvedButtons` moves the
-    // extra buttons into that menu automatically.
+    /// Note: `.download` lives in the bar defaults, not here — the bar and menu
+    /// default sets stay disjoint so a visible bar button is never listed again
+    /// in the "…" menu. When the bar overflows, `resolvedButtons` moves the
+    /// extra buttons into that menu automatically.
     static let defaultMenuActionButtons: [ItemActionButton] = [
         .refresh,
         .subtitles,

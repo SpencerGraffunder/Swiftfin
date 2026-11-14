@@ -18,6 +18,7 @@ struct UserSessionRootView: View {
     @InjectedObject(\.userSessionManager)
     private var userSessionManager
 
+    @ContentBuilder
     var body: some View {
         ZStack {
             switch userSessionManager.state {
@@ -33,7 +34,7 @@ struct UserSessionRootView: View {
                 PosterPreferencesEnvironment {
                     MainTabView()
                 }
-                .id(userSessionManager.currentSession?.user.id)
+                .id(userSessionManager.currentSession.map(ObjectIdentifier.init))
             }
         }
         .animation(.linear(duration: 0.1), value: userSessionManager.state)
@@ -60,10 +61,11 @@ private struct PosterPreferencesEnvironment<Content: View>: View {
 
     let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(@ContentBuilder content: () -> Content) {
         self.content = content()
     }
 
+    @ContentBuilder
     var body: some View {
         content
             .environment(\.posterConfiguration, posterConfiguration)

@@ -76,6 +76,10 @@ final class SearchViewModel: ViewModel {
     }
 
     private func observeFilters() {
+        filterViewModel.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+
         filterViewModel.$currentFilters
             .debounce(for: 0.5, scheduler: RunLoop.main)
             .sink { [weak self] _ in
@@ -93,7 +97,6 @@ final class SearchViewModel: ViewModel {
 
     @Function(\Action.Cases._actuallySearch)
     private func __actuallySearch() async throws {
-
         guard canSearch else { return }
 
         let filters = filterViewModel.currentFilters
@@ -105,7 +108,6 @@ final class SearchViewModel: ViewModel {
 
     @Function(\Action.Cases.getSuggestions)
     private func _getSuggestions() async throws {
-
         await filterViewModel.getQueryFilters()
 
         var parameters = Paths.GetItemsParameters()

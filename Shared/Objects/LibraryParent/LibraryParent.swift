@@ -29,9 +29,9 @@ extension LibraryParent {
 
     var supportedItemTypes: [BaseItemKind] {
         switch libraryType {
-        case .folder:
+        case .folder, .photoAlbum:
             BaseItemKind.supportedCases
-                .appending([.folder, .collectionFolder])
+                .appending([.folder, .collectionFolder, .photoAlbum])
 
         default:
             BaseItemKind.supportedCases
@@ -39,7 +39,6 @@ extension LibraryParent {
     }
 
     func setParentParameters(_ parameters: Paths.GetItemsParameters) -> Paths.GetItemsParameters {
-
         guard let id else { return parameters }
 
         var parameters = parameters
@@ -49,7 +48,7 @@ extension LibraryParent {
         case .boxSet, .collectionFolder, .userView:
             parameters.parentID = id
 
-        case .folder:
+        case .folder, .photoAlbum:
             parameters.parentID = id
             parameters.isRecursive = nil
 

@@ -40,7 +40,8 @@ final class UserSessionManager: ObservableObject {
 
         case backgroundTimeout
         case explicit
-        case unauthorized
+        case authenticationExpired
+        case accountUnavailable
     }
 
     enum AuthenticationError: Error {
@@ -57,6 +58,15 @@ final class UserSessionManager: ObservableObject {
     @Published
     private(set) var currentSession: UserSession?
 
+    struct ReauthenticationRequest {
+
+        let server: ServerState
+        let user: UserState
+    }
+
+    @Published
+    private(set) var reauthenticationRequest: ReauthenticationRequest?
+
     @Published
     private(set) var pendingDeepLink: DeepLink?
 
@@ -66,16 +76,18 @@ final class UserSessionManager: ObservableObject {
 
     let logger = Logger.swiftfin()
 
-    private(set) var mediaPlayerManager: MediaPlayerManager?
+    @Injected(\.mediaPlayerManager)
+    private(set) var mediaPlayerManager
 
     @MainActor
     private var sessionTransition: (id: UUID, task: Task<Void, Never>)?
 
     @MainActor
-    var hasActivePlayback: Bool {
-        guard let mediaPlayerManager else { return false }
+    private var currentUserChanges: AnyCancellable?
 
-        return mediaPlayerManager.state != .stopped
+    @MainActor
+    var hasActivePlayback: Bool {
+        mediaPlayerManager.hasActivePlayback
     }
 
     init() {
@@ -103,20 +115,8 @@ final class UserSessionManager: ObservableObject {
     }
 
     @MainActor
-    private func refreshCurrentSession() async {
-        do {
-            try await updateCurrentSession(with: resolveStoredSession())
-        } catch {
-            logger.error(
-                "Unable to refresh current user session",
-                metadata: ["error": .string(error.localizedDescription)]
-            )
-            await updateCurrentSession(with: nil)
-        }
-    }
-
-    @MainActor
     func signIn(userID: String) async throws {
+        reauthenticationRequest = nil
         Defaults[.lastSignedInUserID] = .signedIn(userID: userID)
         try await updateCurrentSession(with: resolveStoredSession())
 
@@ -129,8 +129,12 @@ final class UserSessionManager: ObservableObject {
     func signOut(reason: SignOutReason) async {
         guard currentSession != nil || sessionTransition != nil else { return }
 
+        let expiredSession = reason == .authenticationExpired ? currentSession : nil
         Defaults[.lastSignedInUserID] = .signedOut
-        await refreshCurrentSession()
+        await updateCurrentSession(with: nil)
+        if let expiredSession, currentSession == nil, Defaults[.lastSignedInUserID] == .signedOut {
+            reauthenticationRequest = .init(server: expiredSession.server, user: expiredSession.user)
+        }
 
         logger.info(
             "Signed out current user",
@@ -139,9 +143,14 @@ final class UserSessionManager: ObservableObject {
     }
 
     @MainActor
+    func consumeReauthenticationRequest() -> ReauthenticationRequest? {
+        defer { reauthenticationRequest = nil }
+        return reauthenticationRequest
+    }
+
+    @MainActor
     private func stopActivePlayback() async {
-        await mediaPlayerManager?.stop()
-        self.mediaPlayerManager = nil
+        mediaPlayerManager.stop()
     }
 
     @MainActor
@@ -196,17 +205,16 @@ final class UserSessionManager: ObservableObject {
 
     @MainActor
     func appWillEnterForeground() async {
-        await refreshCurrentSession()
+        scheduleServerConnectionResolution()
 
         Task {
             await refreshServerInformationIfNeeded(reason: .stale)
         }
 
-        guard currentSession != nil else { return }
-        guard Defaults[.signOutOnBackground] else { return }
-        guard !hasActivePlayback else { return }
+        guard currentSession != nil, Defaults[.signOutOnBackground], !hasActivePlayback else { return }
 
         let backgroundedInterval = Date.now.timeIntervalSince(Defaults[.backgroundTimeStamp])
+
         if backgroundedInterval > Defaults[.backgroundSignOutInterval] {
             await signOut(reason: .backgroundTimeout)
         }
@@ -262,7 +270,7 @@ final class UserSessionManager: ObservableObject {
 
         do {
             try await currentSession.server.updateServerInfo()
-            try await currentSession.user.updateUserData(server: currentSession.server)
+            _ = try await currentSession.getUser(id: currentSession.user.id)
 
             Defaults[.lastServerInformationRefreshDate] = Date.now
         } catch {
@@ -292,15 +300,6 @@ final class UserSessionManager: ObservableObject {
             }
             .store(in: &cancellables)
 
-        Container.shared
-            .mediaPlayerManagerPublisher()
-            .sink { [weak self] manager in
-                Task { @MainActor in
-                    self?.mediaPlayerManager = manager
-                }
-            }
-            .store(in: &cancellables)
-
         observeSocketCommands()
     }
 
@@ -308,12 +307,15 @@ final class UserSessionManager: ObservableObject {
     private func updateCurrentSession(with newSession: UserSession?) async {
         let previous = sessionTransition?.task
         let id = UUID()
+
         let task = Task {
             await previous?.value
             await applyCurrentSession(newSession)
         }
+
         sessionTransition = (id, task)
         await task.value
+
         if sessionTransition?.id == id {
             sessionTransition = nil
         }
@@ -324,13 +326,13 @@ final class UserSessionManager: ObservableObject {
     private func applyCurrentSession(_ newSession: UserSession?) async {
         let previousSession = currentSession
 
+        currentUserChanges = nil
         await stopActivePlayback()
         previousSession?.willStop()
         await newSession?.willStart()
 
         currentSession = newSession
         Container.shared.currentUserSession.reset()
-        Container.shared.mediaPlayerManager.reset()
 
         if newSession == nil {
             state = .signedOut
@@ -338,16 +340,34 @@ final class UserSessionManager: ObservableObject {
             state = .signedIn
         }
 
+        currentUserChanges = newSession?.users
+            .changes
+            .sink { [weak self, weak newSession] change in
+                guard let session = newSession else { return }
+
+                switch change {
+                case let .updated(user):
+                    guard user.id == session.user.id, user.policy?.isDisabled == true else { return }
+
+                case let .deleted(id):
+                    guard id == session.user.id else { return }
+                }
+
+                Task { @MainActor [weak self, weak session] in
+                    guard let self, let session, self.currentSession === session else { return }
+
+                    await self.signOut(reason: .accountUnavailable)
+                }
+            }
+
         newSession?.didStart()
     }
 
     private func resolveStoredSession() throws -> UserSession? {
         guard case let .signedIn(userId) = Defaults[.lastSignedInUserID] else { return nil }
-        guard let user = StoredValues[.User.users].first(where: { $0.id == userId }) else {
-            Defaults[.lastSignedInUserID] = .signedOut
-            throw UserSessionError.invalidStoredSession(userID: userId)
-        }
-        guard let server = StoredValues[.Server.servers].first(where: { $0.id == user.serverID }) else {
+        guard let user = StoredValues[.User.users].first(property: \.id, equalTo: userId),
+              let server = StoredValues[.Server.servers].first(property: \.id, equalTo: user.serverID)
+        else {
             Defaults[.lastSignedInUserID] = .signedOut
             throw UserSessionError.invalidStoredSession(userID: userId)
         }

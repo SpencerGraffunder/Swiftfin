@@ -22,10 +22,12 @@ struct ItemEntry: Identifiable, Hashable {
 
     nonisolated let id: ID
     let item: ItemRecord
+    let grouping: BaseItemDto.Grouping?
 
-    init(item: ItemRecord, occurrence: String? = nil) {
+    init(item: ItemRecord, occurrence: String? = nil, grouping: BaseItemDto.Grouping? = nil) {
         self.id = ID(itemID: item.id, occurrence: occurrence)
         self.item = item
+        self.grouping = grouping
     }
 
     var value: BaseItemDto? {
@@ -45,7 +47,7 @@ struct ItemEntry: Identifiable, Hashable {
         value ?? BaseItemDto(id: itemID)
     }
 
-    // Metadata changes do not change the identity of an entry
+    /// Metadata changes do not change the identity of an entry
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id
     }
