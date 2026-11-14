@@ -14,8 +14,13 @@ import JellyfinAPI
 
 struct DefaultContentGroupProvider: ContentGroupProvider {
 
-    @Injected(\.currentUserSession)
-    var userSession: UserSession?
+    /// Resolved fresh on every access. `@Injected` stores its resolution at
+    /// init, and this provider lives for the whole process inside the static
+    /// tab coordinator — a stored injection would keep serving a dead
+    /// `UserSession` after a session swap (issue QA pass: home stuck empty).
+    var userSession: UserSession? {
+        Container.shared.currentUserSession()
+    }
 
     let displayTitle: String = L10n.home
     let id: String = "default-content-group-provider"
@@ -25,7 +30,10 @@ struct DefaultContentGroupProvider: ContentGroupProvider {
     }
 
     func makeGroups(environment: Empty) async throws -> [any ContentGroup] {
-        guard let userSession else { return [] }
+        // A nil session is a failure to retry against, not "no content":
+        // returning [] here would render "No results" instead of a
+        // retryable error state.
+        guard let userSession else { throw ErrorMessage(L10n.unknownError) }
 
         let parameters = Paths.GetUserViewsParameters(userID: userSession.user.id)
         let userViewsPath = Paths.getUserViews(parameters: parameters)

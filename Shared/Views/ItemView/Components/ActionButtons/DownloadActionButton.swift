@@ -78,7 +78,21 @@ extension ItemActionButtons {
             if let download {
                 switch download.state {
                 case .downloading, .queued:
-                    Label(L10n.downloading, systemImage: "arrow.down.circle")
+                    // The bar renders icon-only, so the progress ring lives
+                    // inside the glyph: same arrow.down.circle with a trim
+                    // ring tracing the download's completion.
+                    Label {
+                        Text(L10n.downloading) + Text(" \(Int(download.progress * 100))%")
+                    } icon: {
+                        Image(systemName: "arrow.down.circle")
+                            .overlay {
+                                Circle()
+                                    .trim(from: 0, to: CGFloat(max(0.02, download.progress)))
+                                    .stroke(style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                                    .foregroundStyle(.tint)
+                                    .rotationEffect(.degrees(-90))
+                            }
+                    }
                 case .completed:
                     // The download glyph stays visible with a small offset
                     // check badge on top, instead of swapping to a bare
