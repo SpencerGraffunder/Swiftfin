@@ -15,6 +15,7 @@ import JellyfinAPI
 /// (with `progress` stored separately) so the queue can be persisted without
 /// associated-value `Codable` synthesis.
 enum DownloadState: String, Codable, Sendable {
+
     case queued
     case downloading
     case paused
@@ -36,6 +37,7 @@ struct DownloadOptions: Codable, Hashable, Sendable {
     /// Whether the item is downloaded via a direct (non-transcoded) stream or
     /// a server transcoded stream.
     enum Method: String, Codable, Sendable {
+
         case direct
         case transcoded
     }

@@ -56,6 +56,7 @@ extension ItemActionButtons {
             item.mediaSources?.first?.supportedBitrates ?? PlaybackBitrate.videoBitrates
         }
 
+        @ContentBuilder
         var body: some View {
             Menu {
                 if let download {
@@ -73,7 +74,7 @@ extension ItemActionButtons {
 
         // MARK: - Label
 
-        @ViewBuilder
+        @ContentBuilder
         private var downloadLabel: some View {
             if let download {
                 switch download.state {
@@ -93,6 +94,7 @@ extension ItemActionButtons {
                                     .rotationEffect(.degrees(-90))
                             }
                     }
+
                 case .completed:
                     // The download glyph stays visible with a small offset
                     // check badge on top, instead of swapping to a bare
@@ -108,8 +110,10 @@ extension ItemActionButtons {
                                     .offset(x: 3, y: -2)
                             }
                     }
+
                 case .paused:
                     Label(L10n.downloadPaused, systemImage: "pause.circle")
+
                 case .failed:
                     Label(L10n.downloadFailed, systemImage: "exclamationmark.circle")
                 }
@@ -120,7 +124,7 @@ extension ItemActionButtons {
 
         // MARK: - Menus
 
-        @ViewBuilder
+        @ContentBuilder
         private var newDownloadMenu: some View {
             Section(L10n.downloadOptions) {
                 Picker(L10n.source, selection: $selectedMethod) {
@@ -145,7 +149,7 @@ extension ItemActionButtons {
             .disabled(item.mediaSources?.isEmpty == true)
         }
 
-        @ViewBuilder
+        @ContentBuilder
         private func stateMenu(for download: Download) -> some View {
             switch download.state {
             case .queued, .downloading:

@@ -23,6 +23,7 @@ struct PlaybackIntent {
     var offline: OfflinePlayback?
 
     struct OfflinePlayback {
+
         let fileURL: URL
         let mediaSource: MediaSourceInfo
     }

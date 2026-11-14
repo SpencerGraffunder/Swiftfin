@@ -120,10 +120,10 @@ enum ItemActionButton: String, CaseIterable, Displayable, Equatable, Identifiabl
         .playback
     ]
 
-    // Note: `.download` lives in the bar defaults, not here — the bar and menu
-    // default sets stay disjoint so a visible bar button is never listed again
-    // in the "…" menu. When the bar overflows, `resolvedButtons` moves the
-    // extra buttons into that menu automatically.
+    /// Note: `.download` lives in the bar defaults, not here — the bar and menu
+    /// default sets stay disjoint so a visible bar button is never listed again
+    /// in the "…" menu. When the bar overflows, `resolvedButtons` moves the
+    /// extra buttons into that menu automatically.
     static let defaultMenuActionButtons: [ItemActionButton] = [
         .refresh,
         .subtitles,

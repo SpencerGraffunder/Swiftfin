@@ -29,6 +29,7 @@ struct DownloadLibraryView: View {
         _manager = ObservedObject(wrappedValue: DownloadManager.shared)
     }
 
+    @ContentBuilder
     var body: some View {
         List {
             ForEach(manager.downloads) { download in
@@ -60,6 +61,7 @@ private struct DownloadRow: View {
 
     let download: Download
 
+    @ContentBuilder
     var body: some View {
         HStack(spacing: 12) {
             DownloadPoster(download: download)
@@ -94,7 +96,7 @@ private struct DownloadRow: View {
         }
     }
 
-    @ViewBuilder
+    @ContentBuilder
     private var statusText: some View {
         switch download.state {
         case .queued, .downloading:
@@ -112,10 +114,13 @@ private struct DownloadRow: View {
                 ProgressView(value: download.progress)
                     .progressViewStyle(.linear)
             }
+
         case .completed:
             Label(L10n.downloaded, systemImage: "checkmark.circle")
+
         case .paused:
             Label(L10n.downloadPaused, systemImage: "pause.circle")
+
         case .failed:
             Label(L10n.downloadFailed, systemImage: "exclamationmark.circle")
         }
@@ -128,6 +133,7 @@ private struct DownloadPoster: View {
 
     let download: Download
 
+    @ContentBuilder
     var body: some View {
         if FileManager.default.fileExists(atPath: download.posterImageURL.path) {
             Image(uiImage: UIImage(contentsOfFile: download.posterImageURL.path) ?? UIImage())

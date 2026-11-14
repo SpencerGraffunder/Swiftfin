@@ -35,21 +35,21 @@ final class DownloadManager: ObservableObject {
 
     private var session: URLSession?
 
-    // The download task currently running for each download ID (used for
-    // cancellation). MainActor-isolated (the manager is @MainActor).
+    /// The download task currently running for each download ID (used for
+    /// cancellation). MainActor-isolated (the manager is @MainActor).
     private var activeTasks: [String: URLSessionDownloadTask] = [:]
 
-    // Maps an active download task to the download ID. `NSMapTable` is
-    // thread-safe, so the nonisolated session delegate can read it from
-    // URLSession's background queue. The task object is used as the key
-    // because `NSMapTable` requires object (reference) types.
+    /// Maps an active download task to the download ID. `NSMapTable` is
+    /// thread-safe, so the nonisolated session delegate can read it from
+    /// URLSession's background queue. The task object is used as the key
+    /// because `NSMapTable` requires object (reference) types.
     fileprivate static let taskIDMap = NSMapTable<AnyObject, AnyObject>(
         keyOptions: .strongMemory,
         valueOptions: .strongMemory
     )
 
-    // In-memory resume data so a paused download can be resumed without
-    // starting over.
+    /// In-memory resume data so a paused download can be resumed without
+    /// starting over.
     fileprivate var resumeDataByDownloadID: [String: Data] = [:]
 
     private var hasStarted = false
@@ -131,7 +131,7 @@ final class DownloadManager: ObservableObject {
 
         var requeued = false
         for index in downloads.indices
-        where downloads[index].state == .downloading && !liveIDs.contains(downloads[index].id) {
+            where downloads[index].state == .downloading && !liveIDs.contains(downloads[index].id) {
             downloads[index].state = .queued
             requeued = true
         }
@@ -427,7 +427,9 @@ final class DownloadManager: ObservableObject {
         // `didCompleteWithError` runs so resume data can be captured there.
         guard let task = activeTasks[downloadID] else {
             activeTasks.removeValue(forKey: downloadID)
-            if pausing { deliberateCancellationIDs.remove(downloadID) }
+            if pausing {
+                deliberateCancellationIDs.remove(downloadID)
+            }
 
             return
         }
@@ -490,8 +492,7 @@ final class DownloadManager: ObservableObject {
 
         for index in downloads.indices {
             if downloads[index].state == .completed,
-               !fileManager.fileExists(atPath: downloads[index].fileURL.path)
-            {
+               !fileManager.fileExists(atPath: downloads[index].fileURL.path) {
                 downloads[index].state = .failed
                 downloads[index].progress = 0
                 changed = true
@@ -593,7 +594,7 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
         }
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: any Error?) {
         guard let downloadID = downloadID(for: task), let error else { return }
 
         // Pause/cancel also surfaces here (background sessions report the

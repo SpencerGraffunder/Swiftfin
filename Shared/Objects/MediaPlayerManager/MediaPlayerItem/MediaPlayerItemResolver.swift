@@ -24,7 +24,7 @@ enum MediaPlayerItemResolver {
         // offline — no item fetch, playback-info negotiation, bitrate test or
         // stream URL construction.
         if let offline = intent.offline {
-            return try Self.resolveOffline(intent: intent, offline: offline, profile: profile)
+            return try resolveOffline(intent: intent, offline: offline, profile: profile)
         }
 
         try Task.checkCancellation()
@@ -191,7 +191,6 @@ enum MediaPlayerItemResolver {
         profile: PlaybackProfile
     ) throws -> MediaPlayerItem {
         guard let item = intent.entry.value else { throw ItemStore.StoreError.itemUnavailable }
-
         guard FileManager.default.fileExists(atPath: offline.fileURL.path) else {
             throw ErrorMessage(L10n.downloadFailed)
         }
