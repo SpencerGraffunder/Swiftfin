@@ -43,7 +43,7 @@ final class DownloadManager: ObservableObject {
     /// thread-safe, so the nonisolated session delegate can read it from
     /// URLSession's background queue. The task object is used as the key
     /// because `NSMapTable` requires object (reference) types.
-    nonisolated(unsafe) fileprivate static let taskIDMap = NSMapTable<AnyObject, AnyObject>(
+    fileprivate nonisolated(unsafe) static let taskIDMap = NSMapTable<AnyObject, AnyObject>(
         keyOptions: .strongMemory,
         valueOptions: .strongMemory
     )
@@ -397,7 +397,7 @@ final class DownloadManager: ObservableObject {
     /// Resolve the stream URL to download, reusing the playback pipeline's
     /// resolution so the downloaded file matches what the player would use.
     private func resolveStreamURL(for download: Download) async -> URL? {
-        guard let userSession = Container.shared.currentUserSession() else { return nil }
+        guard let userSession = Container.shared.currentUserSession(), let itemID = download.item.id else { return nil }
 
         do {
             var configuration = MediaPlaybackConfiguration()
@@ -426,14 +426,13 @@ final class DownloadManager: ObservableObject {
                 playbackInfo.enableTranscoding = true
             }
 
-            guard let itemID = download.item.id else { return nil }
             let response = try await userSession.send(
                 Paths.getPostedPlaybackInfo(itemID: itemID, playbackInfo)
             )
 
-            let resolvedSource = response.value.mediaSources?
-                .first(property: \.id, equalTo: download.mediaSource.id)
-                ?? response.value.mediaSources?.first
+            let sources = response.value.mediaSources ?? []
+            let resolvedSource = sources.first(property: \.id, equalTo: download.mediaSource.id) ?? sources.first
+
             guard let resolvedSource, let playSessionID = response.value.playSessionID else { return nil }
 
             if let transcodingPath = resolvedSource.transcodingURL {
