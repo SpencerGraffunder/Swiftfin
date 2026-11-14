@@ -43,7 +43,7 @@ final class DownloadManager: ObservableObject {
     /// thread-safe, so the nonisolated session delegate can read it from
     /// URLSession's background queue. The task object is used as the key
     /// because `NSMapTable` requires object (reference) types.
-    fileprivate static let taskIDMap = NSMapTable<AnyObject, AnyObject>(
+    nonisolated(unsafe) fileprivate static let taskIDMap = NSMapTable<AnyObject, AnyObject>(
         keyOptions: .strongMemory,
         valueOptions: .strongMemory
     )
@@ -399,19 +399,59 @@ final class DownloadManager: ObservableObject {
     private func resolveStreamURL(for download: Download) async -> URL? {
         guard let userSession = Container.shared.currentUserSession() else { return nil }
 
-        let compatibilityMode: PlaybackCompatibility = download.options.method == .transcoded
-            ? .mostCompatible
-            : .directPlay
-
         do {
-            let playbackItem = try await MediaPlayerItem.build(
-                for: download.item,
-                mediaSource: download.mediaSource,
-                requestedBitrate: download.options.bitrate,
-                compatibilityMode: compatibilityMode
+            var configuration = MediaPlaybackConfiguration()
+            configuration.requestedBitrate = download.options.bitrate
+            configuration.compatibilityMode = download.options.method == .transcoded
+                ? .mostCompatible
+                : .directPlay
+
+            let deviceProfile = DeviceProfile.build(
+                for: Defaults[.VideoPlayer.mediaPlayerType],
+                configuration: configuration,
+                mediaSource: download.mediaSource
             )
 
-            return playbackItem.url
+            var playbackInfo = PlaybackInfoDto()
+            playbackInfo.isAutoOpenLiveStream = true
+            playbackInfo.deviceProfile = deviceProfile
+            playbackInfo.mediaSourceID = download.mediaSource.id
+            playbackInfo.userID = userSession.user.id
+            if download.options.bitrate != .auto {
+                playbackInfo.maxStreamingBitrate = download.options.bitrate.rawValue
+            }
+            if download.options.method == .transcoded {
+                playbackInfo.enableDirectPlay = false
+                playbackInfo.enableDirectStream = false
+                playbackInfo.enableTranscoding = true
+            }
+
+            guard let itemID = download.item.id else { return nil }
+            let response = try await userSession.send(
+                Paths.getPostedPlaybackInfo(itemID: itemID, playbackInfo)
+            )
+
+            let resolvedSource = response.value.mediaSources?
+                .first(property: \.id, equalTo: download.mediaSource.id)
+                ?? response.value.mediaSources?.first
+            guard let resolvedSource, let playSessionID = response.value.playSessionID else { return nil }
+
+            if let transcodingPath = resolvedSource.transcodingURL {
+                return userSession.client.url(path: transcodingPath)
+            }
+
+            let parameters = Paths.GetVideoStreamParameters(
+                isStatic: true,
+                tag: resolvedSource.eTag ?? download.item.etag,
+                playSessionID: playSessionID,
+                mediaSourceID: resolvedSource.id ?? itemID,
+                liveStreamID: resolvedSource.liveStreamID
+            )
+
+            return userSession.client.url(
+                with: Paths.getVideoStream(itemID: itemID, parameters: parameters),
+                queryAPIKey: ***
+            )
         } catch {
             logger.error("Failed to resolve download stream URL for \(download.id): \(error.localizedDescription)")
 

@@ -198,12 +198,15 @@ enum MediaPlayerItemResolver {
         let mediaSource = offline.mediaSource
 
         var configuration = intent.configuration
+        // Local files direct-play; never ask for server transcoding.
+        configuration.compatibilityMode = .directPlay
         configuration.prepare(for: item, source: mediaSource, profile: profile)
         configuration.finish(source: mediaSource, initialSource: mediaSource)
 
         let deviceProfile = DeviceProfile.build(
-            for: Defaults[.VideoPlayer.videoPlayerType],
-            compatibilityMode: .directPlay
+            for: Defaults[.VideoPlayer.mediaPlayerType],
+            configuration: configuration,
+            mediaSource: mediaSource
         )
 
         return .init(
