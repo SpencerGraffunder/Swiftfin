@@ -108,13 +108,11 @@ struct EditServerConnectionView: View {
     }
 
     #if os(iOS)
-    @ViewBuilder
+    @ContentBuilder
     private var locationPermissionWarning: some View {
-
         if draft.interface == .wifi,
            locationPermissionStatus != .authorized,
-           AppPermission.location.privacyDescription.isNotEmpty
-        {
+           AppPermission.location.privacyDescription.isNotEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Label(
                     AppPermission.location.privacyDescription,
@@ -124,9 +122,7 @@ struct EditServerConnectionView: View {
 
                 if locationPermissionStatus == .denied {
                     Button(L10n.permissions) {
-                        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-
-                        UIApplication.shared.open(url)
+                        Task { try? await SystemSettings.application.open() }
                     }
                     .foregroundStyle(Color.accentColor)
                     .buttonStyle(.plain)
@@ -179,6 +175,7 @@ struct EditServerConnectionView: View {
         }
     }
 
+    @ContentBuilder
     var body: some View {
         Form(systemImage: "network") {
             Section {
@@ -331,6 +328,7 @@ struct EditServerConnectionView: View {
 }
 
 private struct ServerConnectionDraft: Equatable {
+
     let id: String
     var name: String
     var urlString: String
@@ -366,8 +364,7 @@ private struct ServerConnectionDraft: Equatable {
 
         if interface == .wifi,
            useWifiName,
-           normalizedSSIDs.isEmpty
-        {
+           normalizedSSIDs.isEmpty {
             throw ErrorMessage(L10n.invalidWifiName)
         }
 

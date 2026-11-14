@@ -95,7 +95,6 @@ final class ActiveSessionsViewModel: ViewModel {
     }
 
     private func updateSessions(_ incomingSessions: [SessionInfoDto], mergeItems: Bool = true) {
-
         guard !environment.isPaused else {
             logger.debug("Socket updates are paused")
             return
@@ -110,8 +109,7 @@ final class ActiveSessionsViewModel: ViewModel {
 
         let filteredSessions = incomingSessions
             .filter { session in
-                guard let seconds = environment.activeWithinSeconds else { return true }
-                guard let date = session.lastActivityDate else { return true }
+                guard let seconds = environment.activeWithinSeconds, let date = session.lastActivityDate else { return true }
 
                 return Date.now.timeIntervalSince(date) <= TimeInterval(seconds)
             }

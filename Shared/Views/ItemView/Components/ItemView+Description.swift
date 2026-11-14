@@ -24,6 +24,7 @@ extension ItemView {
                 item.overview?.isNotEmpty == true
         }
 
+        @ContentBuilder
         var body: some View {
             if isPresented {
                 VStack(alignment: .leading, spacing: 5) {
@@ -36,7 +37,7 @@ extension ItemView {
 
                     if let itemOverview = item.overview, itemOverview.isNotEmpty {
                         let strippedOverview = itemOverview.htmlStripped
-                        InlinePlatformView {
+                        PresentationContent {
                             Button {
                                 router.route(to: .itemOverview(item: item))
                             } label: {
@@ -45,7 +46,7 @@ extension ItemView {
                                     .lineLimit(3)
                             }
                             .buttonStyle(.plain)
-                        } tvOSView: {
+                        } largeView: {
                             Text(strippedOverview)
                                 .font(.footnote)
                                 .lineLimit(3)

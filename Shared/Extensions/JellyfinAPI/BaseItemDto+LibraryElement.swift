@@ -17,9 +17,13 @@ private let baseItemListPortraitWidth: CGFloat = 60
 extension BaseItemDto: LibraryElement {
 
     var supportedLibraryStyleOptions: LibraryStyleOptions {
+        supportedLibraryStyleOptions(grouping: nil)
+    }
+
+    func supportedLibraryStyleOptions(grouping: Grouping?) -> LibraryStyleOptions {
         switch type {
-        case .collectionFolder, .folder, .userView:
-            return BaseItemKind.libraryStyleOptions(for: supportedItemTypes)
+        case .collectionFolder, .folder, .photoAlbum, .userView:
+            return BaseItemKind.libraryStyleOptions(for: supportedItemTypes(for: grouping))
         default:
             break
         }
@@ -31,10 +35,19 @@ extension BaseItemDto: LibraryElement {
         router: Router.Wrapper,
         in namespace: Namespace.ID
     ) {
+        libraryDidSelectElement(router: router, in: namespace, grouping: nil)
+    }
+
+    @MainActor
+    func libraryDidSelectElement(
+        router: Router.Wrapper,
+        in namespace: Namespace.ID,
+        grouping: Grouping?
+    ) {
         switch type {
-        case .collectionFolder, .folder, .userView:
+        case .collectionFolder, .folder, .photoAlbum, .userView:
             router.route(
-                to: .library(library: ItemLibrary(parent: self, filters: .default)),
+                to: .library(library: ItemLibrary(parent: self, filters: .default, grouping: grouping)),
                 in: namespace
             )
 
@@ -43,15 +56,26 @@ extension BaseItemDto: LibraryElement {
         }
     }
 
+    @ContentBuilder
     func makeBody(
         libraryStyle: LibraryStyle,
         action: (() -> Void)?
     ) -> some View {
+        makeBody(libraryStyle: libraryStyle, action: action, grouping: nil)
+    }
+
+    @MainActor
+    @ContentBuilder
+    func makeBody(
+        libraryStyle: LibraryStyle,
+        action: (() -> Void)?,
+        grouping: Grouping?
+    ) -> some View {
         switch libraryStyle.displayType {
         case .grid:
-            BaseItemDtoLibraryGridElement(item: self, libraryStyle: libraryStyle, action: action)
+            BaseItemDtoLibraryGridElement(item: self, libraryStyle: libraryStyle, action: action, grouping: grouping)
         case .list:
-            BaseItemDtoLibraryListElement(item: self, libraryStyle: libraryStyle, action: action)
+            BaseItemDtoLibraryListElement(item: self, libraryStyle: libraryStyle, action: action, grouping: grouping)
         }
     }
 }
@@ -66,11 +90,13 @@ private struct BaseItemDtoLibraryGridElement: View {
 
     let libraryStyle: LibraryStyle
     let action: (() -> Void)?
+    let grouping: BaseItemDto.Grouping?
 
     private var resolvedLibraryStyle: LibraryStyle {
-        item.resolvedLibraryStyle(libraryStyle)
+        item.supportedLibraryStyleOptions(grouping: grouping).normalized(libraryStyle)
     }
 
+    @ContentBuilder
     var body: some View {
         PosterButton(
             item: item,
@@ -79,7 +105,7 @@ private struct BaseItemDtoLibraryGridElement: View {
             if let action {
                 action()
             } else {
-                item.libraryDidSelectElement(router: router, in: namespace)
+                item.libraryDidSelectElement(router: router, in: namespace, grouping: grouping)
             }
         }
     }
@@ -92,6 +118,9 @@ private struct BaseItemDtoLibraryListElement: View {
     @Environment(\.isSelected)
     private var isSelected
 
+    @AdaptiveLayout
+    private var viewLayout
+
     @Namespace
     private var namespace
 
@@ -103,12 +132,13 @@ private struct BaseItemDtoLibraryListElement: View {
 
     let libraryStyle: LibraryStyle
     let action: (() -> Void)?
+    let grouping: BaseItemDto.Grouping?
 
     private var resolvedLibraryStyle: LibraryStyle {
-        item.resolvedLibraryStyle(libraryStyle)
+        item.supportedLibraryStyleOptions(grouping: grouping).normalized(libraryStyle)
     }
 
-    @ViewBuilder
+    @ContentBuilder
     private func currentProgramView(_ program: BaseItemDto) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             if program.id != item.id {
@@ -146,7 +176,7 @@ private struct BaseItemDtoLibraryListElement: View {
         }
     }
 
-    @ViewBuilder
+    @ContentBuilder
     private var accessoryView: some View {
         DotHStack {
             if item.type == .episode, let seasonEpisodeLocator = item.seasonEpisodeLabel {
@@ -165,8 +195,9 @@ private struct BaseItemDtoLibraryListElement: View {
         }
     }
 
+    @ContentBuilder
     var body: some View {
-        ListRow(insets: .init(vertical: 8, horizontal: EdgeInsets.edgePadding)) {
+        ListRow(insets: .init(vertical: 8, horizontal: viewLayout.edgePadding)) {
             PosterImage(
                 item: item,
                 type: resolvedLibraryStyle.posterDisplayType,
@@ -208,7 +239,7 @@ private struct BaseItemDtoLibraryListElement: View {
             if let action {
                 action()
             } else {
-                item.libraryDidSelectElement(router: router, in: namespace)
+                item.libraryDidSelectElement(router: router, in: namespace, grouping: grouping)
             }
         }
         #if os(tvOS)

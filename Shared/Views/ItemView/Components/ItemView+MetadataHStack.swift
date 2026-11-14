@@ -16,6 +16,7 @@ extension ItemView {
         @SharedBaseItem
         var item: BaseItemDto
 
+        @ContentBuilder
         var body: some View {
             DotHStack {
                 if let firstGenre = item.genres?.first {
@@ -30,7 +31,7 @@ extension ItemView {
                     Text(runtime, format: .hourMinuteAbbreviated)
                         // The abbreviated "1h 15m" is read as "1 h, 15 meters"
                         // by VoiceOver; spell out the units (#1738).
-                            .accessibilityLabel(runtime.formatted(.wideUnits))
+                            .accessibilityLabel(runtime.formatted(.spokenRuntime))
                 }
 
                 if let seasonEpisodeLabel = item.seasonEpisodeLabel {

@@ -41,10 +41,11 @@ extension SeriesEpisodeContentGroup {
 
         let header: Header
 
-        init(@ViewBuilder header: () -> Header) {
+        init(@ContentBuilder header: () -> Header) {
             self.header = header()
         }
 
+        @ContentBuilder
         var body: some View {
             EpisodeCollectionLayout(
                 elements: EpisodeElement.loadingElements,
@@ -70,7 +71,7 @@ extension SeriesEpisodeContentGroup {
         init(
             seasonViewModel: PagingLibraryViewModel<EpisodeLibrary>,
             playButtonItem: BaseItemDto?,
-            @ViewBuilder header: () -> Header
+            @ContentBuilder header: () -> Header
         ) {
             self.seasonViewModel = seasonViewModel
             self.playButtonItem = playButtonItem
@@ -96,14 +97,14 @@ extension SeriesEpisodeContentGroup {
 
         private var preferredElementID: EpisodeElement.ID? {
             if let playButtonItemID = playButtonItem?.id,
-               elements.contains(where: { $0.id == playButtonItemID })
-            {
+               elements.contains(where: { $0.id == playButtonItemID }) {
                 return playButtonItemID
             }
 
             return elements.first?.id
         }
 
+        @ContentBuilder
         var body: some View {
             EpisodeCollectionLayout(
                 elements: elements,
@@ -121,6 +122,9 @@ extension SeriesEpisodeContentGroup {
 
     private struct EpisodeCollectionLayout<Header: View, Content: View>: View {
 
+        @AdaptiveLayout
+        private var viewLayout
+
         private enum FocusedSection: Hashable {
 
             case seasons
@@ -129,8 +133,6 @@ extension SeriesEpisodeContentGroup {
 
         @FocusState
         private var focusedSection: FocusedSection?
-        @FocusState
-        private var focusedElement: EpisodeElement.ID?
 
         let elements: [EpisodeElement]
         let preferredElementID: EpisodeElement.ID?
@@ -140,8 +142,8 @@ extension SeriesEpisodeContentGroup {
         init(
             elements: [EpisodeElement],
             preferredElementID: EpisodeElement.ID?,
-            @ViewBuilder header: () -> Header,
-            @ViewBuilder content: @escaping (EpisodeElement) -> Content
+            @ContentBuilder header: () -> Header,
+            @ContentBuilder content: @escaping (EpisodeElement) -> Content
         ) {
             self.elements = elements
             self.preferredElementID = preferredElementID
@@ -149,53 +151,37 @@ extension SeriesEpisodeContentGroup {
             self.content = content
         }
 
-        private static var layout: CollectionHStackLayout {
-            #if os(tvOS)
-            .grid(
-                columns: 3.5,
+        private var layout: CollectionHStackLayout {
+            .minimumWidth(
+                columnWidth: viewLayout.posterMinimumWidth(for: .landscape, size: .medium),
                 rows: 1,
-                columnTrailingInset: 0
+                columnFraction: 0.5
             )
-            #else
-            if UIDevice.isPad {
-                .minimumWidth(
-                    columnWidth: 300,
-                    rows: 1
-                )
-            } else {
-                .grid(
-                    columns: 1.5,
-                    rows: 1,
-                    columnTrailingInset: 0
-                )
-            }
-            #endif
         }
 
+        @ContentBuilder
         var body: some View {
             ContentGroupSection {
                 CollectionHStack(
                     uniqueElements: elements,
-                    layout: Self.layout
+                    layout: layout
                 ) { element in
                     content(element)
-                        .focused($focusedElement, equals: element.id)
                         #if os(tvOS)
-                        .ignoresSafeArea()
+                            .ignoresSafeArea()
                         #endif
                 }
+                #if os(tvOS)
+                .focusBehavior(initial: .leading, returning: .leading)
+                #endif
                 .initialElement(id: preferredElementID)
                 .clipsToBounds(false)
-                .insets(horizontal: EdgeInsets.edgePadding)
-                .itemSpacing(EdgeInsets.itemSpacing)
+                .insets(horizontal: viewLayout.edgePadding)
+                .itemSpacing(viewLayout.itemSpacing)
                 .scrollBehavior(.continuousLeadingEdge)
+                .contentInsetAdjustmentBehavior(.never)
                 .focusSection()
                 .focused($focusedSection, equals: .episodes)
-                .defaultFocus(
-                    $focusedElement,
-                    preferredElementID,
-                    priority: .userInitiated
-                )
             } header: {
                 header
                     .focusSection()
@@ -217,7 +203,7 @@ extension SeriesEpisodeContentGroup {
         let element: EpisodeElement
         let refresh: () -> Void
 
-        @ViewBuilder
+        @ContentBuilder
         var body: some View {
             switch element {
             case .empty:

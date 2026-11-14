@@ -19,6 +19,9 @@ extension SeriesEpisodeContentGroup {
         @Router
         private var router
 
+        @PlayMedia
+        private var playMedia
+
         @SharedBaseItem
         var episode: BaseItemDto
 
@@ -30,22 +33,18 @@ extension SeriesEpisodeContentGroup {
             }
         }
 
+        @ContentBuilder
         var body: some View {
             EpisodeCardLayout(
                 header: episode.displayTitle,
                 subHeader: episode.episodeLocator ?? .emptyDash,
                 content: episodeContent,
                 artworkAction: {
-                    guard let provider = episode.getPlaybackItemProvider(userSession: nil) else {
+                    guard let intent = episode.getPlaybackIntent(userSession: nil) else {
                         return
                     }
 
-                    router.route(
-                        to: .videoPlayer(
-                            provider: provider,
-                            queue: EpisodeMediaPlayerQueue(episode: episode)
-                        )
-                    )
+                    playMedia(intent: intent)
                 },
                 contentAction: {
                     router.route(to: .item(item: episode), in: namespace)
@@ -73,12 +72,16 @@ extension SeriesEpisodeContentGroup {
 
     struct EpisodeStateCard: View {
 
+        @AdaptiveLayout
+        private var viewLayout
+
         let title: String
         let subHeader: String
         let content: String
         let systemImage: String?
         let action: () -> Void
 
+        @ContentBuilder
         var body: some View {
             EpisodeCardLayout(
                 header: title,
@@ -97,15 +100,16 @@ extension SeriesEpisodeContentGroup {
                         }
                     }
                     .posterStyle(.landscape)
-                    #if os(tvOS)
-                    .posterCornerRadius(.landscape)
-                    #endif
+                    .if(viewLayout.isLarge) { $0.posterCornerRadius(.landscape) }
                     .subtleShadow()
             }
         }
     }
 
     private struct EpisodeCardLayout<Artwork: View>: View {
+
+        @AdaptiveLayout
+        private var viewLayout
 
         private enum FocusedElement: Hashable {
 
@@ -136,6 +140,7 @@ extension SeriesEpisodeContentGroup {
 
         private var contentAccessibilityLabel: String {
             let title = contextMenuItem?.posterAccessibility(configuration: posterConfiguration).label
+
             return PosterAccessibility.joined([title ?? header, contextMenuItem == nil ? subHeader : nil, content])
         }
 
@@ -146,7 +151,7 @@ extension SeriesEpisodeContentGroup {
             artworkAction: @escaping () -> Void,
             contentAction: @escaping () -> Void,
             contextMenuItem: BaseItemDto? = nil,
-            @ViewBuilder artwork: () -> Artwork
+            @ContentBuilder artwork: () -> Artwork
         ) {
             self.header = header
             self.subHeader = subHeader
@@ -157,7 +162,7 @@ extension SeriesEpisodeContentGroup {
             self.artwork = artwork()
         }
 
-        @ViewBuilder
+        @ContentBuilder
         private func contextMenuPreview(for item: BaseItemDto) -> some View {
             VStack(alignment: .leading) {
                 PosterImage(
@@ -180,7 +185,7 @@ extension SeriesEpisodeContentGroup {
             .glassEffect(in: .rect(cornerRadius: 10))
         }
 
-        @ViewBuilder
+        @ContentBuilder
         private var artworkButton: some View {
             let button = Button(action: artworkAction) {
                 if let contextMenuItem {
@@ -209,6 +214,7 @@ extension SeriesEpisodeContentGroup {
             }
         }
 
+        @ContentBuilder
         var body: some View {
             VStack(alignment: .leading) {
                 artworkButton
@@ -225,14 +231,14 @@ extension SeriesEpisodeContentGroup {
                     .accessibilityHint(contextMenuItem == nil ? "" : L10n.posterAccessibilityDetailsHint)
                 }
                 .foregroundStyle(.primary, .secondary)
-                #if os(tvOS)
-                .buttonStyle(
-                    EpisodeContentButtonStyle(
-                        showsMaterial: focusedElement != nil,
-                        isFocused: focusedElement == .content
+                .if(viewLayout.isLarge) { button in
+                    button.buttonStyle(
+                        EpisodeContentButtonStyle(
+                            showsMaterial: focusedElement != nil,
+                            isFocused: focusedElement == .content
+                        )
                     )
-                )
-                #endif
+                }
                 .focused($focusedElement, equals: .content)
             }
             .focusSection()
@@ -251,6 +257,7 @@ extension SeriesEpisodeContentGroup {
         let subHeader: String
         let content: String
 
+        @ContentBuilder
         var body: some View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(subHeader)
@@ -273,7 +280,6 @@ extension SeriesEpisodeContentGroup {
         }
     }
 
-    #if os(tvOS)
     private struct EpisodeContentButtonStyle: ButtonStyle {
 
         let showsMaterial: Bool
@@ -281,6 +287,7 @@ extension SeriesEpisodeContentGroup {
 
         private let cornerRadius: CGFloat = 20
 
+        @ContentBuilder
         func makeBody(configuration: Configuration) -> some View {
             configuration.label
                 .padding(28)
@@ -289,15 +296,15 @@ extension SeriesEpisodeContentGroup {
                     maxHeight: .infinity,
                     alignment: .topLeading
                 )
-                .frame(height: 200)
-                .backport
-                .glassEffect(
-                    showsMaterial ? .regular : .identity,
-                    in: .rect(
+                .frame(minHeight: 200)
+                .background {
+                    RoundedRectangle(
                         cornerRadius: cornerRadius,
                         style: .continuous
                     )
-                )
+                    .fill(.regularMaterial)
+                    .opacity(showsMaterial ? 1 : 0)
+                }
                 .scaleEffect(isFocused ? 1.05 : 1)
                 .scaleEffect(configuration.isPressed ? 0.97 : 1)
                 .brightness(isFocused ? 0.04 : 0)
@@ -312,5 +319,4 @@ extension SeriesEpisodeContentGroup {
                 .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
         }
     }
-    #endif
 }

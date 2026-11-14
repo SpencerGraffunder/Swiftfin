@@ -19,6 +19,9 @@ extension CustomizeSettingsView {
         typealias PlatformPicker = Picker
         #endif
 
+        @AdaptiveLayout
+        private var viewLayout
+
         @Default(.Customization.Library.showFavorites)
         private var showFavorites
         @Default(.Customization.Library.enabledDrawerFilters)
@@ -32,15 +35,15 @@ extension CustomizeSettingsView {
 
         @Default(.Customization.Library.rememberLayout)
         private var rememberLibraryLayout
-        @Default(.Customization.Library.rememberSort)
-        private var rememberLibrarySort
+        @Default(.Customization.Library.rememberFilters)
+        private var rememberLibraryFilters
 
         @Router
         private var router
 
+        @ContentBuilder
         var body: some View {
             Form(systemImage: "gear") {
-
                 Section {
                     Toggle(L10n.favorites, isOn: $showFavorites)
 
@@ -53,10 +56,12 @@ extension CustomizeSettingsView {
                             to: .itemFilterDrawerSelector(selection: $libraryEnabledDrawerFilters)
                         )
                     }
-                }
 
-                Section {
-                    Toggle(L10n.rememberSorting, isOn: $rememberLibrarySort)
+                    ChevronButton(L10n.savedFilters) {
+                        router.route(to: .savedFilters)
+                    }
+
+                    Toggle(L10n.rememberFilters, isOn: $rememberLibraryFilters)
                 }
 
                 Section(L10n.layout) {
@@ -64,14 +69,12 @@ extension CustomizeSettingsView {
 
                     PlatformPicker(L10n.posters, selection: $libraryStyle.posterDisplayType)
 
-                    if libraryStyle.displayType == .list, !UIDevice.isPhone {
+                    if libraryStyle.displayType == .list, viewLayout.canAdjustLibraryListColumns {
                         Stepper(L10n.columns, value: $libraryStyle.listColumnCount, in: 1 ... 4, step: 1) {
                             LabeledContent(L10n.columns, value: libraryStyle.listColumnCount.description)
                         }
                     }
-                }
 
-                Section {
                     Toggle(L10n.rememberLayout, isOn: $rememberLibraryLayout)
                 }
 

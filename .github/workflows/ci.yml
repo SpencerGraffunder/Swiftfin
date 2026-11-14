@@ -21,7 +21,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 # Needed by the publish job to create GitHub Releases for the .ipa.
 permissions:
@@ -32,6 +32,7 @@ jobs:
     name: "Build 🔨"
     if: github.event.pull_request.draft == false
     strategy:
+      fail-fast: false
       matrix:
         scheme:
           - "Swiftfin"
@@ -43,6 +44,8 @@ jobs:
 
     env:
       XCODE_VERSION: "26.6"
+      FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: "120"
+      FASTLANE_XCODEBUILD_SETTINGS_RETRIES: "2"
 
     outputs:
       version: ${{ steps.package.outputs.version }}
@@ -77,13 +80,27 @@ jobs:
 
       - name: Build
         uses: nick-fields/retry@v4
+        env:
+          SCHEME: ${{ matrix.scheme }}
         with:
           max_attempts: 3
           retry_on: error
           timeout_minutes: 60
-          command: bundle exec fastlane buildLane \
-            scheme:"\"${{ matrix.scheme }}\"" \
-            xcodeVersion:${{ env.XCODE_VERSION }}
+          command: |
+            bundle exec fastlane buildLane \
+              "scheme:$SCHEME" \
+              "xcodeVersion:$XCODE_VERSION"
+
+      - name: Save Swift packages
+        if: ${{ github.event_name == 'push' && steps.swift-packages.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            build/SourcePackages/checkouts
+            build/SourcePackages/repositories
+            build/SourcePackages/artifacts
+            build/SourcePackages/workspace-state.json
+          key: ${{ steps.swift-packages.outputs.cache-primary-key }}
 
       - name: Package unsigned IPA
         id: package
@@ -116,19 +133,6 @@ jobs:
           path: fastlane/build/*.ipa
           if-no-files-found: error
           compression-level: 0
-
-      # Populate the shared cache from main,
-      # PR caches are isolated to their merge ref
-      - name: Save Swift packages
-        if: ${{ github.event_name == 'push' && steps.swift-packages.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            build/SourcePackages/checkouts
-            build/SourcePackages/repositories
-            build/SourcePackages/artifacts
-            build/SourcePackages/workspace-state.json
-          key: ${{ steps.swift-packages.outputs.cache-primary-key }}
 
   publish:
     name: "Publish .ipa 🚀"

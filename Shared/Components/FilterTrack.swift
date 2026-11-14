@@ -6,24 +6,78 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
-import Defaults
 import SwiftUI
+
+private struct FilterTrackLabelStyle: LabelStyle {
+
+    @AdaptiveLayout
+    private var viewLayout
+
+    @Environment(\.isFocused)
+    private var isFocused
+
+    let showsTitle: Bool
+    let iconEdge: HorizontalEdge
+
+    private var metrics: CapsuleButtonStyle.CapsuleControlMetrics {
+        FilterTrack.metrics(for: viewLayout)
+    }
+
+    private var collapsedLabelWidth: CGFloat {
+        metrics.minimumHeight - 2 * metrics.horizontalPadding
+    }
+
+    @ContentBuilder
+    private func icon(_ image: some View) -> some View {
+        image
+            #if os(tvOS)
+                .frame(width: showsTitle || isFocused ? nil : collapsedLabelWidth)
+            #endif
+    }
+
+    @ContentBuilder
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: viewLayout.value(standard: 4, large: metrics.labelSpacing)) {
+            if iconEdge == .leading {
+                icon(configuration.icon)
+            }
+
+            configuration.title
+                .isVisible(showsTitle || isFocused)
+
+            if iconEdge == .trailing {
+                icon(configuration.icon)
+            }
+        }
+        .lineLimit(1)
+        .fixedSize()
+        .frame(
+            width: showsTitle || isFocused ? nil : viewLayout.value(standard: 32, large: collapsedLabelWidth),
+            alignment: iconEdge == .leading ? .leading : .trailing
+        )
+    }
+}
 
 struct FilterTrack: View {
 
+    @AdaptiveLayout
+    private var viewLayout
+
     enum Style {
+
         case compact
         case regular
     }
 
     enum FocusTarget: Hashable {
-        case reset
+
+        case options
         case filter(ItemFilterType)
 
         var title: String {
             switch self {
-            case .reset:
-                L10n.reset
+            case .options:
+                L10n.options
             case let .filter(type):
                 type.displayTitle
             }
@@ -31,7 +85,7 @@ struct FilterTrack: View {
 
         var systemImage: String {
             switch self {
-            case .reset:
+            case .options:
                 "line.3.horizontal.decrease"
             case let .filter(type):
                 type.systemImage
@@ -39,8 +93,8 @@ struct FilterTrack: View {
         }
     }
 
-    @Default(.accentColor)
-    private var accentColor
+    @AppTheme
+    private var theme
 
     @ObservedObject
     var viewModel: FilterViewModel
@@ -53,14 +107,27 @@ struct FilterTrack: View {
     var style: Style = .regular
     var iconEdge: HorizontalEdge = .leading
 
+    static func controlSize(for layout: ViewLayout) -> ControlSize {
+        layout.value(standard: .small, large: .large)
+    }
+
+    static func metrics(for layout: ViewLayout) -> CapsuleButtonStyle.CapsuleControlMetrics {
+        .init(controlSize(for: layout), layout: layout)
+    }
+
+    private var metrics: CapsuleButtonStyle.CapsuleControlMetrics {
+        Self.metrics(for: viewLayout)
+    }
+
     private var targets: [FocusTarget] {
-        (viewModel.hasActiveFilters ? [.reset] : []) + types.map(FocusTarget.filter)
+        types.map(FocusTarget.filter)
+            .prepending(.options, if: viewModel.hasFilterOptions)
     }
 
     private func isSelected(_ target: FocusTarget) -> Bool {
         switch target {
-        case .reset:
-            true
+        case .options:
+            viewModel.hasActiveFilters
         case let .filter(type):
             viewModel.isFilterSelected(type: type)
         }
@@ -68,63 +135,101 @@ struct FilterTrack: View {
 
     private func reset() {
         #if os(tvOS)
-        focus.wrappedValue = types.first.map(FocusTarget.filter)
+        if viewModel.savedFilters.isEmpty {
+            focus.wrappedValue = types.first.map(FocusTarget.filter)
+        }
         #endif
+
         viewModel.reset(filterType: nil)
     }
 
-    @ViewBuilder
+    @ContentBuilder
     private func buttonIcon(for target: FocusTarget) -> some View {
         Image(systemName: target.systemImage)
             #if os(tvOS)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 32, height: 32)
-                .padding(.vertical, 8)
             #endif
     }
 
-    @ViewBuilder
+    @ContentBuilder
     private func buttonLabel(for target: FocusTarget) -> some View {
-        let showsTitle = style == .regular || focus.wrappedValue == target
-
-        HStack(spacing: UIDevice.isTV ? 12 : 4) {
-            if iconEdge == .leading {
-                buttonIcon(for: target)
-            }
-
+        Label {
             Text(target.title)
-                .isVisible(showsTitle)
-
-            if iconEdge == .trailing {
-                buttonIcon(for: target)
-            }
+        } icon: {
+            buttonIcon(for: target)
         }
-        .lineLimit(1)
-        .fixedSize()
-        .frame(width: showsTitle ? nil : 32, alignment: iconEdge == .leading ? .leading : .trailing)
     }
 
-    @ViewBuilder
-    private var resetButton: some View {
-        #if os(iOS)
-        Menu(FocusTarget.reset.title, systemImage: FocusTarget.reset.systemImage) {
-            Button(L10n.reset, role: .destructive, action: reset)
+    @ContentBuilder
+    private var menuActions: some View {
+        Button(
+            viewModel.selectedSavedFilter == nil ? L10n.save : L10n.edit,
+            systemImage: viewModel.selectedSavedFilter == nil ? "square.and.arrow.down" : "pencil"
+        ) {
+            router.route(
+                to: .editFilters(
+                    filters: viewModel.savableFilters,
+                    savedFilter: viewModel.selectedSavedFilter,
+                    onSave: { viewModel.selectedSavedFilter = $0 }
+                )
+            )
         }
-        .labelStyle(.iconOnly)
-        #else
-        Button(action: reset) {
-            buttonLabel(for: .reset)
-        }
-        #endif
+
+        Button(L10n.clear, systemImage: "text.badge.xmark", role: .destructive, action: reset)
+            .disabled(!viewModel.hasActiveFilters)
     }
 
-    @ViewBuilder
+    @ContentBuilder
     private func button(for target: FocusTarget) -> some View {
         Group {
             switch target {
-            case .reset:
-                resetButton
+            case .options:
+                Menu {
+                    if viewModel.hasActiveFilters || viewModel.selectedSavedFilter != nil {
+                        if UIDevice.isTV || viewModel.savedFilters.isEmpty {
+                            Section {
+                                menuActions
+                            }
+                        } else {
+                            ControlGroup {
+                                menuActions
+                            }
+                        }
+                    }
+
+                    if viewModel.savedFilters.isNotEmpty {
+                        Section(L10n.filters) {
+                            ForEach(viewModel.savedFilters) { savedFilter in
+                                Button {
+                                    viewModel.selectedSavedFilter = savedFilter
+                                } label: {
+                                    if viewModel.selectedSavedFilter?.id == savedFilter.id {
+                                        Label(savedFilter.name, systemImage: "checkmark")
+                                    } else {
+                                        Text(savedFilter.name)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    buttonLabel(for: target)
+                }
+                .menuStyle(.button)
+                #if os(tvOS)
+                .buttonStyle(
+                    .capsule(
+                        selectionTint: theme.accentColor,
+                        focusTint: .white,
+                        anchor: style == .compact ? iconEdge : nil
+                    )
+                )
+                #else
+                .labelStyle(.iconOnly)
+                #endif
+
             case let .filter(type):
                 Button {
                     router.route(to: .filter(type: type, viewModel: viewModel))
@@ -133,19 +238,26 @@ struct FilterTrack: View {
                 }
             }
         }
+        .labelStyle(
+            FilterTrackLabelStyle(
+                showsTitle: style == .regular || focus.wrappedValue == target,
+                iconEdge: iconEdge
+            )
+        )
         .focused(focus, equals: target)
         .isSelected(isSelected(target))
         .accessibilityLabel(target.title)
     }
 
+    @ContentBuilder
     var body: some View {
         ForEach(targets, id: \.self) { target in
             button(for: target)
                 .fixedSize()
         }
-        .font(UIDevice.isTV ? .callout : .footnote)
-        .controlSize(UIDevice.isTV ? .large : .small)
-        .buttonStyle(.capsule(selectionTint: accentColor, focusTint: UIDevice.isTV ? .white : nil))
+        .font(metrics.font)
+        .controlSize(Self.controlSize(for: viewLayout))
+        .buttonStyle(.capsule(selectionTint: theme.accentColor, focusTint: viewLayout.value(standard: nil, large: .white)))
         #if os(tvOS)
         .animation(.snappy(duration: 0.2), value: focus.wrappedValue)
         #endif

@@ -18,6 +18,7 @@ extension ItemView {
         let title: String
         let id: String
 
+        @ContentBuilder
         var body: some View {
             Button {
                 router.route(to: .item(id: id))
@@ -34,7 +35,6 @@ extension ItemView {
             .foregroundStyle(.primary, .secondary)
             .labelStyle(.trailingIcon)
             .buttonStyle(.capsule)
-            .controlSize(UIDevice.isTV ? .large : .regular)
         }
     }
 }

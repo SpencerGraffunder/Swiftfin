@@ -33,19 +33,31 @@ struct ItemLibrary: MediaLibrary, SearchablePagingLibrary, WithRandomElementLibr
     init(
         parent: BaseItemDto,
         filters: ItemFilterCollection? = nil,
-        staticFilters: ItemFilterCollection = .default
+        staticFilters: ItemFilterCollection = .default,
+        grouping: BaseItemDto.Grouping? = nil
     ) {
         var filters = filters ?? .default
 
-        if let id = parent.id, Defaults[.Customization.Library.rememberSort] {
-            let storedFilters = StoredValues[.User.libraryFilters(parentID: id)]
+        if let id = parent.id,
+           Defaults[.Customization.Library.rememberFilters],
+           staticFilters.union(filters).itemTypes.isEmpty {
+            filters = filters.union(StoredValues[.User.libraryFilters(parentID: id)])
+        }
 
-            filters.sortBy = storedFilters.sortBy
-            filters.sortOrder = storedFilters.sortOrder
+        var resolvedGrouping = grouping
+
+        if resolvedGrouping == nil,
+           let groupings = parent.groupings,
+           Defaults[.Customization.Library.rememberLayout] {
+            let storedGrouping = StoredValues[
+                .User.libraryGrouping(id: parent.pagingLibraryID, default: groupings.defaultSelection)
+            ]
+
+            resolvedGrouping = groupings.elements.first { $0.id == storedGrouping.id }
         }
 
         self.environment = .init(
-            grouping: parent.groupings?.defaultSelection,
+            grouping: resolvedGrouping ?? parent.groupings?.defaultSelection,
             filters: staticFilters.union(filters)
         )
         self.filterViewModel = .init(
@@ -84,7 +96,7 @@ struct ItemLibrary: MediaLibrary, SearchablePagingLibrary, WithRandomElementLibr
 
     func makeLibraryBody(
         viewModel: PagingLibraryViewModel<Self>,
-        @ViewBuilder content: @escaping () -> some View
+        @ContentBuilder content: @escaping () -> some View
     ) -> AnyView {
         ItemLibraryBody(
             filterViewModel: filterViewModel,
@@ -115,10 +127,7 @@ struct ItemLibrary: MediaLibrary, SearchablePagingLibrary, WithRandomElementLibr
         )
         parameters.userID = pageState.userSession.user.id
 
-        let request = Paths.getItems(parameters: parameters)
-        let response = try await pageState.userSession.client.send(request)
-
-        return try pageState.items(from: response)
+        return try await retrieveItems(parameters: parameters, environment: environment, pageState: pageState)
     }
 
     func retrieveRandomElement(
@@ -133,10 +142,7 @@ struct ItemLibrary: MediaLibrary, SearchablePagingLibrary, WithRandomElementLibr
         parameters.sortBy = [.random]
         parameters.userID = pageState.userSession.user.id
 
-        let request = Paths.getItems(parameters: parameters)
-        let response = try await pageState.userSession.client.send(request)
-
-        return try pageState.items(from: response).first
+        return try await retrieveItems(parameters: parameters, environment: environment, pageState: pageState).first
     }
 
     func retrieveSearchPage(
@@ -154,10 +160,42 @@ struct ItemLibrary: MediaLibrary, SearchablePagingLibrary, WithRandomElementLibr
         parameters.searchTerm = filterViewModel.staticFilters.query ?? query
         parameters.userID = pageState.userSession.user.id
 
+        return try await retrieveItems(parameters: parameters, environment: environment, pageState: pageState)
+    }
+
+    private func retrieveItems(
+        parameters: Paths.GetItemsParameters,
+        environment: Environment,
+        pageState: LibraryPageState
+    ) async throws -> [ItemPatch] {
+        var parameters = parameters
+        let groupedFolders: [String]?
+
+        if environment.grouping == .folders,
+           parent.libraryType == .userView,
+           parent.collectionType == .movies || parent.collectionType == .tvshows {
+            groupedFolders = pageState.userSession.userData.configuration?.groupedFolders ?? []
+            guard let groupedFolders, groupedFolders.isNotEmpty else { return [] }
+
+            parameters.parentID = nil
+            parameters.ids = groupedFolders
+
+            if parameters.sortBy == [.random] {
+                parameters.limit = nil
+            }
+        } else {
+            groupedFolders = nil
+        }
+
         let request = Paths.getItems(parameters: parameters)
         let response = try await pageState.userSession.client.send(request)
 
-        return try pageState.items(from: response)
+        return try pageState.items(from: response).filter { patch in
+            guard let groupedFolders else { return true }
+
+            return groupedFolders.contains(patch.value.id ?? "") &&
+                (patch.value.collectionType == nil || patch.value.collectionType == parent.collectionType)
+        }
     }
 
     private func makeBaseItemParameters(environment: Environment) -> Paths.GetItemsParameters {
@@ -170,12 +208,6 @@ struct ItemLibrary: MediaLibrary, SearchablePagingLibrary, WithRandomElementLibr
         parameters.sortOrder = [.ascending]
 
         guard let parentID = parent.id else { return parameters }
-
-        if parent.isFolderCollection {
-            parameters.parentID = parentID
-            parameters.isRecursive = nil
-            return parameters
-        }
 
         switch parent.libraryType {
         case .person:
@@ -200,7 +232,11 @@ struct ItemLibrary: MediaLibrary, SearchablePagingLibrary, WithRandomElementLibr
                 return nil
             }
 
-            return ItemEntry(item: record, occurrence: patch.value.playlistItemID)
+            return ItemEntry(
+                item: record,
+                occurrence: patch.value.playlistItemID,
+                grouping: patch.value.type == .collectionFolder ? .folders : nil
+            )
         }
     }
 
@@ -294,13 +330,14 @@ private struct ItemLibraryBody<Content: View>: View {
     init(
         filterViewModel: FilterViewModel,
         viewModel: PagingLibraryViewModel<ItemLibrary>,
-        @ViewBuilder content: () -> Content
+        @ContentBuilder content: () -> Content
     ) {
         self.filterViewModel = filterViewModel
         self.viewModel = viewModel
         self.content = content()
     }
 
+    @ContentBuilder
     var body: some View {
         content
             .onFirstAppear {
@@ -309,7 +346,7 @@ private struct ItemLibraryBody<Content: View>: View {
                 }
             }
             .onChange(of: filterViewModel.currentFilters) {
-                rememberSort(from: filterViewModel.currentFilters)
+                rememberFilters(from: filterViewModel.currentFilters)
             }
             .onReceive(
                 filterViewModel.$currentFilters
@@ -320,6 +357,13 @@ private struct ItemLibraryBody<Content: View>: View {
                 guard viewModel.environment.filters != filters else { return }
 
                 viewModel.environment.filters = filters
+            }
+            .onChange(of: viewModel.environment.grouping) { _, grouping in
+                guard let grouping, Defaults[.Customization.Library.rememberLayout] else { return }
+
+                StoredValues[
+                    .User.libraryGrouping(id: viewModel.library.parent.pagingLibraryID, default: grouping)
+                ] = grouping
             }
             #if os(tvOS)
             .filterBar(
@@ -342,15 +386,12 @@ private struct ItemLibraryBody<Content: View>: View {
             #endif
     }
 
-    private func rememberSort(from filters: ItemFilterCollection) {
+    private func rememberFilters(from filters: ItemFilterCollection) {
         guard let id = viewModel.library.parent.id,
-              Defaults[.Customization.Library.rememberSort]
+              Defaults[.Customization.Library.rememberFilters],
+              filterViewModel.libraryItemTypes.isEmpty
         else { return }
 
-        let storedFilters = StoredValues[.User.libraryFilters(parentID: id)]
-            .mutating(\.sortBy, with: filters.sortBy)
-            .mutating(\.sortOrder, with: filters.sortOrder)
-
-        StoredValues[.User.libraryFilters(parentID: id)] = storedFilters
+        StoredValues[.User.libraryFilters(parentID: id)] = filters.mutating(\.query, with: nil)
     }
 }

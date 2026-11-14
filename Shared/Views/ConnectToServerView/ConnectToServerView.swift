@@ -7,13 +7,12 @@
 //
 
 import Combine
-import Defaults
 import SwiftUI
 
 struct ConnectToServerView: View {
 
-    @Default(.accentColor)
-    private var accentColor
+    @AppTheme
+    private var theme
 
     @FocusState
     private var isURLFocused: Bool
@@ -42,10 +41,14 @@ struct ConnectToServerView: View {
         case let .duplicateServer(server):
             UIDevice.feedback(.warning)
             duplicateServer = server
+
+        case .error:
+            UIDevice.feedback(.error)
+            isURLFocused = true
         }
     }
 
-    @ViewBuilder
+    @ContentBuilder
     private var connectSection: some View {
         Section(L10n.connectToServer) {
             TextField(L10n.url, text: $url)
@@ -90,7 +93,7 @@ struct ConnectToServerView: View {
             .fontWeight(.semibold)
             .backport
             .buttonStyle(.glassProminent.shadow(false))
-            .tint(accentColor)
+            .tint(theme.accentColor)
             #if os(iOS)
             .controlSize(.large)
             #endif
@@ -101,7 +104,7 @@ struct ConnectToServerView: View {
 
     // MARK: - Local Servers Section
 
-    @ViewBuilder
+    @ContentBuilder
     private var localServersSection: some View {
         Section(L10n.localServers) {
             if viewModel.localServers.isEmpty {
@@ -120,7 +123,7 @@ struct ConnectToServerView: View {
         }
     }
 
-    @ViewBuilder
+    @ContentBuilder
     private var contentView: some View {
         #if os(iOS)
         List {
@@ -145,6 +148,7 @@ struct ConnectToServerView: View {
 
     // MARK: - Body
 
+    @ContentBuilder
     var body: some View {
         contentView
             .navigationTitle(L10n.connect)
@@ -159,12 +163,6 @@ struct ConnectToServerView: View {
                 viewModel.searchForServers()
             }
             .onReceive(viewModel.events, perform: onEvent)
-            .onReceive(viewModel.$error) { error in
-                guard error != nil else { return }
-
-                UIDevice.feedback(.error)
-                isURLFocused = true
-            }
             .topBarTrailing {
                 if viewModel.state == .connecting {
                     ProgressView()

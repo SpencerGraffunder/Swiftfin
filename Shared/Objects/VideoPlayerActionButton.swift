@@ -6,6 +6,8 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Defaults
+
 enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Identifiable, Storable, SystemImageable {
 
     case aspectFill
@@ -17,9 +19,12 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
     case playbackSettings
     case playNextItem
     case playPreviousItem
+    case nextChapter
+    case previousChapter
     case subtitles
     #if os(iOS)
     case gestureLock
+    case playbackDestination
     #endif
     case subtitleOffset
 
@@ -43,11 +48,17 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
             L10n.playNextItem
         case .playPreviousItem:
             L10n.playPreviousItem
+        case .nextChapter:
+            L10n.nextChapter
+        case .previousChapter:
+            L10n.previousChapter
         case .subtitles:
             L10n.subtitles
         #if os(iOS)
         case .gestureLock:
             L10n.gestureLock
+        case .playbackDestination:
+            L10n.cast
         #endif
         case .subtitleOffset:
             L10n.subtitleOffset
@@ -70,6 +81,8 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
         case .playbackSettings: "tv"
         case .playNextItem: "forward.end.fill"
         case .playPreviousItem: "backward.end.fill"
+        case .nextChapter: "forward.frame.fill"
+        case .previousChapter: "backward.frame.fill"
         case .subtitles: "captions.bubble.fill"
         case .subtitleOffset: "textformat.abc"
         }
@@ -99,12 +112,15 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
         case .audio: "speaker.wave.2.fill"
         case .audioOffset: "waveform.path"
         case .autoPlay: usesLiquidGlassSymbols ? "play.fill" : "play.circle.fill"
+        case .playbackDestination: "airplayvideo"
         case .gestureLock: usesLiquidGlassSymbols ? "lock.fill" : "lock.circle.fill"
         case .pictureInPicture: "pip.enter"
         case .playbackSpeed: "speedometer"
         case .playbackSettings: usesLiquidGlassSymbols ? "tv" : "tv.circle.fill"
         case .playNextItem: usesLiquidGlassSymbols ? "forward.end.fill" : "forward.end.circle.fill"
         case .playPreviousItem: usesLiquidGlassSymbols ? "backward.end.fill" : "backward.end.circle.fill"
+        case .nextChapter: usesLiquidGlassSymbols ? "forward.frame.fill" : "forward.frame"
+        case .previousChapter: usesLiquidGlassSymbols ? "backward.frame.fill" : "backward.frame"
         case .subtitles: "captions.bubble.fill"
         case .subtitleOffset: "textformat.abc"
         }
@@ -135,12 +151,28 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
     }
     #endif
 
-    static let defaultBarActionButtons: [VideoPlayerActionButton] = [
-        .aspectFill,
-        .autoPlay,
-        .playPreviousItem,
-        .playNextItem,
-    ]
+    static var supportedCases: [Self] {
+        #if os(iOS)
+        allCases.filter { $0 != .playbackDestination || Defaults[.Experimental.chromecast] }
+        #elseif os(tvOS)
+        allCases.filter { $0 != .pictureInPicture }
+        #else
+        allCases
+        #endif
+    }
+
+    static let defaultBarActionButtons: [VideoPlayerActionButton] = {
+        var buttons: [VideoPlayerActionButton] = [
+            .aspectFill,
+            .autoPlay,
+            .playPreviousItem,
+            .playNextItem,
+        ]
+        #if os(iOS)
+        buttons.append(.playbackDestination)
+        #endif
+        return buttons
+    }()
 
     static let defaultMenuActionButtons: [VideoPlayerActionButton] = [
         .audio,
@@ -150,5 +182,5 @@ enum VideoPlayerActionButton: String, CaseIterable, Displayable, Equatable, Iden
         .playbackSpeed,
         .pictureInPicture,
         .playbackSettings,
-    ]
+    ].filter { supportedCases.contains($0) }
 }

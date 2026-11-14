@@ -27,7 +27,7 @@ struct ServerConnectionView: View {
         editMode.isEditing
     }
 
-    @ViewBuilder
+    @ContentBuilder
     private func serverConnectionRow(_ connection: ServerConnection) -> some View {
         Button {
             guard !isEditing else { return }
@@ -67,6 +67,7 @@ struct ServerConnectionView: View {
         .foregroundStyle(.primary, .secondary)
     }
 
+    @ContentBuilder
     var body: some View {
         Form(systemImage: "network") {
             if isAutoSwitchFeatureEnabled {
