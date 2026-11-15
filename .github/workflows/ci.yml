@@ -52,10 +52,10 @@ jobs:
     env:
       FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: "120"
       FASTLANE_XCODEBUILD_SETTINGS_RETRIES: "2"
-      # actions/setup-ruby defaults its tool cache to /Users/runner (the hosted
-      # image's home) and hits EACCES mkdir on the self-hosted Mac, where the
-      # runner user is spencer. Point it inside the runner's own work dir.
-      RUNNER_TOOL_CACHE: ${{ github.workspace }}/../_toolcache
+      # NOTE (self-hosted Mac): ruby/setup-ruby hardcodes /Users/runner/hostedtoolcache
+      # (the hosted image's home). The Mac runner host has a real world-writable
+      # /Users/runner directory (sudo mkdir + chown spencer, 2026-11-15); if the
+      # runner host is ever rebuilt, recreate it or Setup Ruby fails with EACCES.
 
     outputs:
       version: ${{ steps.package.outputs.version }}
