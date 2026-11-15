@@ -31,12 +31,10 @@ struct DownloadPosterContextMenuItem: View {
 
     @ContentBuilder
     var body: some View {
-        if
-            isDownloadsEnabled,
-            item.canBePlayed,
-            [.episode, .movie].contains(item.type),
-            item.id != nil
-        {
+        if isDownloadsEnabled,
+           item.canBePlayed,
+           [.episode, .movie].contains(item.type),
+           item.id != nil {
             switch manager.download(for: item.id)?.state {
             case .completed:
                 Label(L10n.downloaded, systemImage: "checkmark.circle.fill")
