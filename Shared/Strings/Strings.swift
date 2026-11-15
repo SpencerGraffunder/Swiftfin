@@ -544,6 +544,10 @@ internal enum L10n {
   internal static let deleteItemConfirmationMessage = L10n.tr("Localizable", "deleteItemConfirmationMessage", fallback: "Are you sure you want to delete this item? This action cannot be undone.")
   /// Are you sure you want to delete the selected items?
   internal static let deleteSelectedConfirmation = L10n.tr("Localizable", "deleteSelectedConfirmation", fallback: "Are you sure you want to delete the selected items?")
+  /// Delete (%d)
+  internal static func deleteSelection(_ p1: Int) -> String {
+    return L10n.tr("Localizable", "deleteSelection", p1, fallback: "Delete (%d)")
+  }
   /// Are you sure you wish to delete all selected devices? All selected sessions will be logged out.
   internal static let deleteSelectionDevicesWarning = L10n.tr("Localizable", "deleteSelectionDevicesWarning", fallback: "Are you sure you wish to delete all selected devices? All selected sessions will be logged out.")
   /// Are you sure you wish to delete all selected users?
@@ -628,8 +632,42 @@ internal enum L10n {
   internal static let doubleTouch = L10n.tr("Localizable", "doubleTouch", fallback: "Double touch")
   /// Download
   internal static let download = L10n.tr("Localizable", "download", fallback: "Download")
+  /// %1$@ of %2$@
+  internal static func downloadBytesProgress(_ p1: Any, _ p2: Any) -> String {
+    return L10n.tr("Localizable", "downloadBytesProgress", String(describing: p1), String(describing: p2), fallback: "%1$@ of %2$@")
+  }
+  /// Downloaded
+  internal static let downloaded = L10n.tr("Localizable", "downloaded", fallback: "Downloaded")
+  /// ~%@
+  internal static func downloadEstimatedSize(_ p1: Any) -> String {
+    return L10n.tr("Localizable", "downloadEstimatedSize", String(describing: p1), fallback: "~%@")
+  }
+  /// Download Failed
+  internal static let downloadFailed = L10n.tr("Localizable", "downloadFailed", fallback: "Download Failed")
+  /// Downloading…
+  internal static let downloading = L10n.tr("Localizable", "downloading", fallback: "Downloading…")
+  /// Download Options
+  internal static let downloadOptions = L10n.tr("Localizable", "downloadOptions", fallback: "Download Options")
+  /// Download Paused
+  internal static let downloadPaused = L10n.tr("Localizable", "downloadPaused", fallback: "Download Paused")
+  /// Downloading… %d%%
+  internal static func downloadProgress(_ p1: Int) -> String {
+    return L10n.tr("Localizable", "downloadProgress", p1, fallback: "Downloading… %d%%")
+  }
   /// Downloads
   internal static let downloads = L10n.tr("Localizable", "downloads", fallback: "Downloads")
+  /// Download Season
+  internal static let downloadSeason = L10n.tr("Localizable", "downloadSeason", fallback: "Download Season")
+  /// Items you download will appear here so you can play them offline.
+  internal static let downloadsEmptySubtitle = L10n.tr("Localizable", "downloadsEmptySubtitle", fallback: "Items you download will appear here so you can play them offline.")
+  /// %@/s
+  internal static func downloadSpeed(_ p1: Any) -> String {
+    return L10n.tr("Localizable", "downloadSpeed", String(describing: p1), fallback: "%@/s")
+  }
+  /// %@ left
+  internal static func downloadTimeLeft(_ p1: Any) -> String {
+    return L10n.tr("Localizable", "downloadTimeLeft", String(describing: p1), fallback: "%@ left")
+  }
   /// Dropped frames
   internal static let droppedFrames = L10n.tr("Localizable", "droppedFrames", fallback: "Dropped frames")
   /// This saves the URL as another connection for the existing server and makes it active.
@@ -1168,6 +1206,8 @@ internal enum L10n {
   internal static let noActivity = L10n.tr("Localizable", "noActivity", fallback: "No activity")
   /// No profiles defined. Playback issues may occur.
   internal static let noDeviceProfileWarning = L10n.tr("Localizable", "noDeviceProfileWarning", fallback: "No profiles defined. Playback issues may occur.")
+  /// No Downloads
+  internal static let noDownloads = L10n.tr("Localizable", "noDownloads", fallback: "No Downloads")
   /// No episodes available
   internal static let noEpisodesAvailable = L10n.tr("Localizable", "noEpisodesAvailable", fallback: "No episodes available")
   /// No items
@@ -1672,6 +1712,8 @@ internal enum L10n {
   internal static let seek = L10n.tr("Localizable", "seek", fallback: "Seek")
   /// See more
   internal static let seeMore = L10n.tr("Localizable", "seeMore", fallback: "See more")
+  /// Select
+  internal static let select = L10n.tr("Localizable", "select", fallback: "Select")
   /// Select all
   internal static let selectAll = L10n.tr("Localizable", "selectAll", fallback: "Select all")
   /// Select image
@@ -1718,6 +1760,8 @@ internal enum L10n {
   internal static let showMissingSeasons = L10n.tr("Localizable", "showMissingSeasons", fallback: "Show missing seasons")
   /// Show on Skip Back
   internal static let showOnSkipBack = L10n.tr("Localizable", "showOnSkipBack", fallback: "Show on Skip Back")
+  /// Show player controls
+  internal static let showPlayerControls = L10n.tr("Localizable", "showPlayerControls", fallback: "Show player controls")
   /// Show progress
   internal static let showProgress = L10n.tr("Localizable", "showProgress", fallback: "Show progress")
   /// Show recommendations
@@ -1936,6 +1980,8 @@ internal enum L10n {
   internal static let trailingValue = L10n.tr("Localizable", "trailingValue", fallback: "Trailing value")
   /// Transcode
   internal static let transcode = L10n.tr("Localizable", "transcode", fallback: "Transcode")
+  /// Transcoded
+  internal static let transcoded = L10n.tr("Localizable", "transcoded", fallback: "Transcoded")
   /// Transcode progress
   internal static let transcodeProgress = L10n.tr("Localizable", "transcodeProgress", fallback: "Transcode progress")
   /// Transcode reason(s)
