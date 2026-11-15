@@ -30,6 +30,14 @@ struct DownloadLibraryView: View {
     @Router
     private var router
 
+    /// Download behavior settings (gear menu in this tab).
+    @Default(.Experimental.downloadsAutoQueueNext)
+    private var downloadsAutoQueueNext
+    @Default(.Experimental.downloadsAllowCellular)
+    private var downloadsAllowCellular
+    @Default(.Experimental.downloadsDeleteAfterWatched)
+    private var downloadsDeleteAfterWatched
+
     @State
     private var isSelecting = false
 
@@ -130,6 +138,27 @@ struct DownloadLibraryView: View {
                         isSelecting = true
                     }
                 }
+            }
+            // Download behavior settings live here (not in Experimental
+            // settings): they belong with the feature they configure.
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    // swiftlint:disable hard_coded_display_string
+                    Picker(L10n.downloadAutoQueueNext, selection: $downloadsAutoQueueNext) {
+                        Text(L10n.off).tag(0)
+                        ForEach(1 ... 5, id: \.self) { count in
+                            Text(L10n.downloadAutoQueueCount(count)).tag(count)
+                        }
+                    }
+
+                    Toggle(L10n.downloadCellular, isOn: $downloadsAllowCellular)
+
+                    Toggle(L10n.downloadDeleteAfterWatched, isOn: $downloadsDeleteAfterWatched)
+                    // swiftlint:enable hard_coded_display_string
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .accessibilityLabel(L10n.settings)
             }
         }
         .safeAreaInset(edge: .bottom) {
@@ -317,7 +346,9 @@ private struct DownloadRow: View {
                 }
 
                 if let ticks = download.mediaSource.runTimeTicks, ticks > 0 {
-                    Text(Self.duration(TimeInterval(ticks) / 10_000_000))
+                    // Clock icon so the trailing figure reads as runtime
+                    // rather than an unexplained count.
+                    Label(Self.duration(TimeInterval(ticks) / 10_000_000), systemImage: "clock")
                 }
             }
 

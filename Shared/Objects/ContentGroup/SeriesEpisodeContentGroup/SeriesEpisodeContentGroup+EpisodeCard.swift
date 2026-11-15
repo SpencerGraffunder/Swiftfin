@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Defaults
 import JellyfinAPI
 import SwiftUI
 
@@ -126,6 +127,9 @@ extension SeriesEpisodeContentGroup {
         @FocusState
         private var focusedElement: FocusedElement?
 
+        @Default(.Experimental.downloads)
+        private var isDownloadsEnabled
+
         @State
         private var artworkSize: CGSize = .zero
 
@@ -205,7 +209,23 @@ extension SeriesEpisodeContentGroup {
             if let contextMenuItem {
                 button
                     .trackingSize($artworkSize)
-                    .posterContextMenu(for: contextMenuItem) {
+                    .contextMenu {
+                        contextMenuItem.posterContextMenu
+
+                        // The card shows the episode's season, so its
+                        // long-press menu also offers downloading the whole
+                        // season (issue: user asked for a download button
+                        // there).
+                        if isDownloadsEnabled,
+                           contextMenuItem.type == .episode,
+                           let seasonID = contextMenuItem.seasonID?.nilIfBlank {
+                            Button(L10n.downloadSeason, systemImage: "arrow.down.circle") {
+                                Task {
+                                    await DownloadManager.shared.downloadSeason(BaseItemDto(id: seasonID))
+                                }
+                            }
+                        }
+                    } preview: {
                         contextMenuPreview(for: contextMenuItem)
                             .withViewContext(viewContext)
                     }

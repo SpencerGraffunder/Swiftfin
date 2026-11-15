@@ -9,6 +9,7 @@
 import Defaults
 import FactoryKit
 import Foundation
+import Get
 import JellyfinAPI
 import Logging
 import Nuke
@@ -198,7 +199,26 @@ final class DownloadManager: ObservableObject {
             return
         }
 
-        let selectedMediaSource = mediaSource ?? item.mediaSources?.first
+        let fallbackSources = item.mediaSources ?? []
+        var resolvedItem = item
+        var sourceList = fallbackSources
+
+        // Items coming from list/poster endpoints often omit MediaSources
+        // (the server only sends them when Fields=MediaSources was asked
+        // for). Fetch the full item before giving up — this silent "no media
+        // source" return was why downloads started from some surfaces never
+        // began.
+        if mediaSource == nil,
+           sourceList.isEmpty,
+           let userSession = Container.shared.currentUserSession(),
+           let full = try? await userSession.send(Paths.getItem(itemID: itemID, userID: userSession.user.id)),
+           let sources = full.value.mediaSources,
+           sources.isNotEmpty {
+            resolvedItem = full.value
+            sourceList = sources
+        }
+
+        let selectedMediaSource = mediaSource ?? sourceList.first
         guard let selectedMediaSource else {
             logger.error("No media source to download for item \(itemID)")
 
@@ -209,7 +229,7 @@ final class DownloadManager: ObservableObject {
         let fileName = "\(itemID)-\(selectedMediaSource.id ?? "source").\(extensionName)"
 
         let download = Download(
-            item: item,
+            item: resolvedItem,
             mediaSource: selectedMediaSource,
             options: options,
             fileName: fileName
@@ -324,14 +344,9 @@ final class DownloadManager: ObservableObject {
             defer { seasonIndex += 1 }
             guard let seasonID = seasons[seasonIndex].id else { continue }
 
-            var parameters = Paths.GetEpisodesParameters()
-            parameters.seasonID = seasonID
-            parameters.userID = userID
-            parameters.fields = PosterSubtitleField.itemFields
-
             let episodes: [BaseItemDto]
             do {
-                let response = try await client.send(Paths.getEpisodes(seriesID: seasonID, parameters: parameters))
+                let response = try await client.send(SeasonDownloads.episodesRequest(seasonID: seasonID, userID: userID))
                 episodes = (response.value.items ?? []).sorted { ($0.indexNumber ?? 0) < ($1.indexNumber ?? 0) }
             } catch {
                 logger.warning("Auto-queue: unable to load episodes for \(seasonID): \(error.localizedDescription)")
@@ -789,26 +804,21 @@ final class DownloadManager: ObservableObject {
 
         await start()
 
-        var parameters = Paths.GetEpisodesParameters()
-        parameters.enableUserData = true
-        parameters.fields = PosterSubtitleField.itemFields + [.overview]
-        parameters.seasonID = seasonID
-        parameters.userID = userSession.user.id
-
         do {
             let response = try await userSession.send(
-                Paths.getEpisodes(seriesID: seasonID, parameters: parameters)
+                SeasonDownloads.episodesRequest(seasonID: seasonID, userID: userSession.user.id)
             )
 
-            let episodes = (response.value.items ?? []).filter { item in
-                item.type == .episode
-                    && item.mediaSources?.isEmpty == false
-                    && download(for: item.id)?.state != .completed
-            }
+            let episodes = SeasonDownloads.downloadableEpisodes(
+                from: response.value.items ?? [],
+                existing: { download(for: $0) }
+            )
 
             for episode in episodes {
                 await download(episode, options: .direct(episode))
             }
+
+            logger.info("Season download: queued \(episodes.count) episode(s) for \(seasonID)")
         } catch {
             logger.error("Failed to fetch season \(seasonID) for download: \(error.localizedDescription)")
         }
@@ -818,6 +828,44 @@ final class DownloadManager: ObservableObject {
 
     private func index(of downloadID: String) -> Int? {
         downloads.firstIndex { $0.id == downloadID }
+    }
+}
+
+/// Pure (network-free) core of the season/auto-queue episode fetch. Split
+/// out so unit tests can pin the behaviour that used to silently break
+/// (see Tests/SwiftfinTests/SeasonDownloadTests.swift).
+enum SeasonDownloads {
+
+    /// Season-episode request. Crucially requests the `MediaSources` field:
+    /// without it the server omits `MediaSources`, every list-sourced episode
+    /// then fails the "has a media source" filter, and season/auto-queue
+    /// downloads silently queued nothing.
+    static func episodesRequest(seasonID: String, userID: String) -> Request<BaseItemDtoQueryResult> {
+        var parameters = Paths.GetEpisodesParameters()
+        parameters.enableUserData = true
+        parameters.fields = PosterSubtitleField.itemFields + [.mediaSources, .overview]
+        parameters.seasonID = seasonID
+        parameters.userID = userID
+
+        return Paths.getEpisodes(seriesID: seasonID, parameters: parameters)
+    }
+
+    /// The episodes a season download should actually enqueue: playable
+    /// episodes that carry media sources, skipping anything already tracked
+    /// as a download (except failed ones, which the season action retries).
+    static func downloadableEpisodes(
+        from items: [BaseItemDto],
+        existing: (String?) -> Download?
+    ) -> [BaseItemDto] {
+        items.filter { item in
+            guard item.type == .episode, item.mediaSources?.isEmpty == false else { return false }
+
+            if let download = existing(item.id), download.state != .failed {
+                return false
+            }
+
+            return true
+        }
     }
 }
 

@@ -56,7 +56,10 @@ enum DownloadTrickplaySupport {
         }
 
         if let runtimeTicks, runtimeTicks > 0 {
-            let thumbnails = Double(runtimeTicks) / 10000.0 * 1000.0 / Double(interval)
+            // One thumbnail every `interval` milliseconds; one millisecond is
+            // 10_000 ticks. (The first version of this line multiplied by
+            // 1000 instead, overcounting 1000x — pinned by OfflineExtrasTests.)
+            let thumbnails = Double(runtimeTicks) / (10000.0 * Double(interval))
             count = max(count, Int(ceil(thumbnails / Double(tilesPerSheet))))
         }
 
