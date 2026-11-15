@@ -103,6 +103,54 @@ struct Download: Codable, Identifiable, Hashable, Sendable {
         DownloadStorage.imageDirectory.appending(path: "\(id)-poster")
     }
 
+    /// The on-disk backdrop (landscape preview) image URL, persisted alongside
+    /// the poster so episode/series previews render in airplane mode.
+    var backdropImageURL: URL {
+        DownloadStorage.imageDirectory.appending(path: "\(id)-backdrop")
+    }
+
+    /// The local media file URL, but only when the download is completed and
+    /// the file is actually on disk — the single source of truth for
+    /// "playable offline" checks (play button, resolver, downloads list).
+    var localFileURL: URL? {
+        guard state == .completed, FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+        return fileURL
+    }
+
+    /// The actual size of the downloaded file on disk, when present.
+    var localFileSize: Int64? {
+        guard let url = localFileURL else { return nil }
+        let values = try? url.resourceValues(forKeys: [.fileSizeKey])
+        return values?.fileSize.map(Int64.init)
+    }
+
+    /// The expected total size of the download: the on-disk size when
+    /// finished, else the bytes reported by the transfer, else an estimate
+    /// from the media source bitrate and runtime.
+    var expectedFileSize: Int64? {
+        if let actual = localFileSize {
+            return actual
+        }
+        if let bytes = bytesWritten, bytes > 0 {
+            return totalBytesExpected ?? bytes
+        }
+        guard
+            let bitrate = mediaSource.containerBitrate, bitrate > 0,
+            let ticks = mediaSource.runTimeTicks, ticks > 0
+        else { return nil }
+        return bitrate / 8 * ticks / 10_000_000
+    }
+
+    /// Bytes written so far in the active transfer (live while downloading).
+    var bytesWritten: Int64?
+
+    /// Total bytes expected in the active transfer (nil for chunked/unknown
+    /// length responses).
+    var totalBytesExpected: Int64?
+
+    /// Smoothed transfer speed in bytes/second (live while downloading).
+    var speedBytesPerSecond: Double?
+
     init(
         item: BaseItemDto,
         mediaSource: MediaSourceInfo,
