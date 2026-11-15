@@ -655,9 +655,9 @@ final class DownloadManager: ObservableObject {
             )
 
             let episodes = (response.value.items ?? []).filter { item in
-                item.type == .episode,
-                item.mediaSources?.isEmpty == false,
-                download(for: item.id)?.state != .completed
+                item.type == .episode &&
+                    item.mediaSources?.isEmpty == false &&
+                    download(for: item.id)?.state != .completed
             }
 
             for episode in episodes {
