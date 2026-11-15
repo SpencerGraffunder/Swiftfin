@@ -151,6 +151,10 @@ struct Download: Codable, Identifiable, Hashable, Sendable {
     /// Smoothed transfer speed in bytes/second (live while downloading).
     var speedBytesPerSecond: Double?
 
+    /// Human-readable cause when `state == .failed` (round 3). Optional and
+    /// decoded-nil for downloads persisted before this field existed.
+    var failureReason: String?
+
     init(
         item: BaseItemDto,
         mediaSource: MediaSourceInfo,

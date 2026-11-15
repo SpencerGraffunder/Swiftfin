@@ -83,6 +83,16 @@ final class MediaPlayerManager {
             intent.queue = EpisodeMediaPlayerQueue()
         }
 
+        // "Download next N episodes while watching" (round 3). Fire-and-forget:
+        // gating and dedup live inside the manager.
+        if Defaults[.Experimental.downloads], Defaults[.Experimental.downloadsAutoQueueNext] > 0, intent.item.type == .episode {
+            let episode = intent.item
+            let session = userSession
+            Task {
+                await DownloadManager.shared.autoQueueNextEpisodes(after: episode, userSession: session)
+            }
+        }
+
         let session = MediaSession(
             intent: intent,
             userSession: userSession,

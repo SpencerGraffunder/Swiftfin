@@ -7,13 +7,10 @@ on:
       - '**'
       - '!Translations/*.lproj/**'
       - 'Translations/en.lproj/**'
-  pull_request:
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - ready_for_review
-    branches: [ main ]
+  # No pull_request build (2026-11-15): every PR already gets its own identical
+  # Build run here AND on merge another one on main, doubling wall-clock per
+  # change. PRs stay gated by Validate PR (validate-pr.yaml); the main build is
+  # the only ship build, so compile breaks surface there (agent watcher triages).
   # Fork-friendly manual trigger: GitHub disables Actions on forks by default,
   # so a push may not run CI until the owner enables Actions in the fork's
   # Settings/Actions tab. Once enabled, the workflow can be run on demand.
@@ -43,12 +40,16 @@ jobs:
     # xcode-27 = GitHub-hosted macOS 27 image (Xcode 27.1 default). Bumped from
     # macos-26/26.6 2026-11-14: MediaAccessibilityKit 0.4.0 (upstream dep) fails
     # to compile on Xcode 26.6 ('sending' region-isolation error) and builds
-    # green on 27.1, same image testflight.yml already uses. Preview label, not
-    # Spec's Mac.
-    runs-on: xcode-27
+    # green on 27.1+, same image testflight.yml already uses.
+    # Pinned to the self-hosted Mac (Xcode 27.2) 2026-11-15: the bare xcode-27
+    # label matched GitHub's macOS-27 *preview* pool and builds queued there for
+    # up to ~25+ min idle-queue (runner:null while 'running'), which is what made
+    # the pipeline feel like >1.5h. The Mac is always online and compiles
+    # MediaAccessibilityKit fine. SPM cache below uses a runner-agnostic key
+    # ('x27') so hosted and Mac builds share one warm package cache.
+    runs-on: [self-hosted, nuclear-mac]
 
     env:
-      XCODE_VERSION: "27.1"
       FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: "120"
       FASTLANE_XCODEBUILD_SETTINGS_RETRIES: "2"
 
@@ -79,9 +80,9 @@ jobs:
             build/SourcePackages/repositories
             build/SourcePackages/artifacts
             build/SourcePackages/workspace-state.json
-          key: spm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.XCODE_VERSION }}-${{ matrix.scheme }}-${{ hashFiles('Swiftfin.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          key: spm-v1-${{ runner.os }}-${{ runner.arch }}-x27-${{ matrix.scheme }}-${{ hashFiles('Swiftfin.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: |
-            spm-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.XCODE_VERSION }}-${{ matrix.scheme }}-
+            spm-v1-${{ runner.os }}-${{ runner.arch }}-x27-${{ matrix.scheme }}-
 
       - name: Build
         uses: nick-fields/retry@v4

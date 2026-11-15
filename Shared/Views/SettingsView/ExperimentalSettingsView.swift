@@ -17,6 +17,12 @@ struct ExperimentalSettingsView: View {
 
     @Default(.Experimental.downloads)
     private var isDownloadsEnabled
+    @Default(.Experimental.downloadsAutoQueueNext)
+    private var downloadsAutoQueueNext
+    @Default(.Experimental.downloadsAllowCellular)
+    private var downloadsAllowCellular
+    @Default(.Experimental.downloadsDeleteAfterWatched)
+    private var downloadsDeleteAfterWatched
     @Default(.Experimental.mpvPlayer)
     private var isMPVEnabled
     @Default(.Experimental.serverConnectionAutoSwitch)
@@ -52,6 +58,19 @@ struct ExperimentalSettingsView: View {
             #endif
 
             Toggle(L10n.downloads, isOn: $isDownloadsEnabled)
+
+            if isDownloadsEnabled {
+                Picker(L10n.downloadAutoQueueNext, selection: $downloadsAutoQueueNext) {
+                    Text(L10n.off).tag(0)
+                    ForEach(1 ... 5, id: \.self) { count in
+                        Text(L10n.downloadAutoQueueCount(count)).tag(count)
+                    }
+                }
+
+                Toggle(L10n.downloadCellular, isOn: $downloadsAllowCellular)
+
+                Toggle(L10n.downloadDeleteAfterWatched, isOn: $downloadsDeleteAfterWatched)
+            }
             // swiftlint:enable hard_coded_display_string
         }
         .onChange(of: isServerConnectionAutoSwitchEnabled) {

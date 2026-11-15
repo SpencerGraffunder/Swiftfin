@@ -633,10 +633,24 @@ internal enum L10n {
   /// Download
   internal static let download = L10n.tr("Localizable", "download", fallback: "Download")
   /// %1$@ of %2$@
+  /// %%d
+internal static func downloadAutoQueueCount(_ p1: Int) -> String {
+    return L10n.tr("Localizable", "downloadAutoQueueCount", p1, fallback: "%%d")
+  }
+
+  /// Auto-Download Next Episodes
+internal static let downloadAutoQueueNext = L10n.tr("Localizable", "downloadAutoQueueNext", fallback: "Auto-Download Next Episodes")
+
   internal static func downloadBytesProgress(_ p1: Any, _ p2: Any) -> String {
     return L10n.tr("Localizable", "downloadBytesProgress", String(describing: p1), String(describing: p2), fallback: "%1$@ of %2$@")
   }
   /// Downloaded
+  /// Download Over Cellular
+internal static let downloadCellular = L10n.tr("Localizable", "downloadCellular", fallback: "Download Over Cellular")
+
+  /// Delete After Watched
+internal static let downloadDeleteAfterWatched = L10n.tr("Localizable", "downloadDeleteAfterWatched", fallback: "Delete After Watched")
+
   internal static let downloaded = L10n.tr("Localizable", "downloaded", fallback: "Downloaded")
   /// ~%@
   internal static func downloadEstimatedSize(_ p1: Any) -> String {
@@ -645,6 +659,11 @@ internal enum L10n {
   /// Download Failed
   internal static let downloadFailed = L10n.tr("Localizable", "downloadFailed", fallback: "Download Failed")
   /// Downloading…
+  /// Failed: %%@
+internal static func downloadFailedReason(_ p1: Any) -> String {
+    return L10n.tr("Localizable", "downloadFailedReason", String(describing: p1), fallback: "Failed: %%@")
+  }
+
   internal static let downloading = L10n.tr("Localizable", "downloading", fallback: "Downloading…")
   /// Download Options
   internal static let downloadOptions = L10n.tr("Localizable", "downloadOptions", fallback: "Download Options")
@@ -664,6 +683,9 @@ internal enum L10n {
   internal static func downloadSpeed(_ p1: Any) -> String {
     return L10n.tr("Localizable", "downloadSpeed", String(describing: p1), fallback: "%@/s")
   }
+  /// Stream could not be resolved
+  internal static let downloadStreamUnavailable = L10n.tr("Localizable", "downloadStreamUnavailable", fallback: "Stream could not be resolved")
+
   /// %@ left
   internal static func downloadTimeLeft(_ p1: Any) -> String {
     return L10n.tr("Localizable", "downloadTimeLeft", String(describing: p1), fallback: "%@ left")

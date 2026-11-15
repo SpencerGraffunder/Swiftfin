@@ -301,8 +301,19 @@ private struct DownloadRow: View {
             }
 
         case .failed:
-            if let estimate = download.expectedFileSize {
-                Text(L10n.downloadEstimatedSize(Self.bytes(estimate)))
+            HStack(spacing: 8) {
+                if let reason = download.failureReason {
+                    Text(L10n.downloadFailedReason(reason))
+                        .foregroundStyle(.red)
+                        .lineLimit(2)
+                } else if let estimate = download.expectedFileSize {
+                    Text(L10n.downloadEstimatedSize(Self.bytes(estimate)))
+                }
+
+                Button(L10n.retry) {
+                    DownloadManager.shared.retry(download.id)
+                }
+                .buttonStyle(.borderless)
             }
         }
     }
