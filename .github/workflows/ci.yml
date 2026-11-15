@@ -88,6 +88,54 @@ jobs:
           restore-keys: |
             spm-v1-${{ runner.os }}-${{ runner.arch }}-x27-${{ matrix.scheme }}-
 
+      # Download-feature unit tests (2026-11-15). Runs BEFORE the ship archive
+      # so a red suite fails this job and the publish job never sees a build.
+      # Simulator slice shares ./build with the archive step (configurations
+      # and SDKs keep separate subfolders), so steady-state cost is just the
+      # incremental Debug/sim compile.
+      - name: Add unit test target
+        if: matrix.scheme == 'Swiftfin'
+        run: |
+          gem install xcodeproj -N
+          ruby Scripts/qa/add_unit_tests.rb
+
+      - name: Resolve and boot simulator
+        if: matrix.scheme == 'Swiftfin'
+        run: |
+          RESOLVED=""
+          for name in "iPhone 17 Pro" "iPhone 17" "iPhone 16 Pro" "iPhone 16"; do
+            UDID=$(xcrun simctl list devices available | grep -E "^[[:space:]]+${name} \(" | head -1 | grep -oE '[0-9A-F-]{36}' || true)
+            if [ -n "$UDID" ]; then RESOLVED="$name"; break; fi
+          done
+          if [ -z "$RESOLVED" ]; then echo "No usable iPhone simulator found"; exit 1; fi
+          echo "Using $RESOLVED ($UDID)"
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID" || true
+
+      - name: Unit tests 🧪
+        if: matrix.scheme == 'Swiftfin'
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Swiftfin.xcodeproj \
+            -scheme Swiftfin \
+            -destination "platform=iOS Simulator,id=$SIM_UDID" \
+            -derivedDataPath ./build \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            -only-testing:SwiftfinTests \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee unit-tests.log
+
+      - name: Upload unit test results
+        if: ${{ matrix.scheme == 'Swiftfin' && always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-tests-${{ github.run_number }}
+          path: unit-tests.log
+          if-no-files-found: ignore
+
+
       - name: Build
         uses: nick-fields/retry@v4
         env:
