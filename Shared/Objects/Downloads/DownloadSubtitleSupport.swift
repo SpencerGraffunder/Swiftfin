@@ -57,7 +57,7 @@ enum DownloadSubtitleSupport {
         client: JellyfinClient
     ) async -> [Download.SubtitleFile] {
         let candidates = candidates(in: mediaSource)
-        guard let itemID, candidates.isNotEmpty else { return [] }
+        guard candidates.isNotEmpty else { return [] }
 
         let directory = DownloadStorage.subtitleDirectory(for: download.id)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

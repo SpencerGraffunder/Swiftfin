@@ -159,7 +159,11 @@ struct DefaultContentGroupProvider: ContentGroupProvider {
         var seen = Set<String>()
 
         func unique(_ items: [BaseItemDto]) -> [BaseItemDto] {
-            items.filter { seen.insert($0.id).inserted }
+            items.filter { item in
+                guard let id = item.id else { return true }
+
+                return seen.insert(id).inserted
+            }
         }
 
         let resumable = unique(

@@ -127,7 +127,7 @@ final class LocalPlaybackPositions {
                 } else if entry.ticks > 0 {
                     var info = PlaybackStopInfo()
                     info.itemID = itemID
-                    info.positionTicks = entry.ticks
+                    info.positionTicks = Int(entry.ticks)
                     _ = try await client.send(Paths.reportPlaybackStopped(info))
                 }
 

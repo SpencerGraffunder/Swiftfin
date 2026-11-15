@@ -492,8 +492,9 @@ extension MPVMediaPlayer: MediaPlayerExternalSubtitleProviding {
 
         // Offline downloads load the persisted sidecar file; online streams
         // resolve through the server delivery URL as before.
+        let client = mediaSession?.userSession.client
         let url = item.offlineSubtitleURLs?[index]
-            ?? mediaSession?.userSession.client.flatMap { stream.url(with: $0) }
+            ?? client.flatMap { stream.url(with: $0) }
 
         guard let url else {
             return false
