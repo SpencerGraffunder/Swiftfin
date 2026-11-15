@@ -52,6 +52,10 @@ jobs:
     env:
       FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT: "120"
       FASTLANE_XCODEBUILD_SETTINGS_RETRIES: "2"
+      # actions/setup-ruby defaults its tool cache to /Users/runner (the hosted
+      # image's home) and hits EACCES mkdir on the self-hosted Mac, where the
+      # runner user is spencer. Point it inside the runner's own work dir.
+      RUNNER_TOOL_CACHE: ${{ github.workspace }}/../_toolcache
 
     outputs:
       version: ${{ steps.package.outputs.version }}
