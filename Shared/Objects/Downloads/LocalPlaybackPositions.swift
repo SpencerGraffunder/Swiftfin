@@ -60,12 +60,15 @@ final class LocalPlaybackPositions {
     }
 
     /// Flags the saved position for another server sync (used when a live
-    /// progress report fails, e.g. airplane mode).
+    /// progress report fails, e.g. airplane mode). Entries flagged `false`
+    /// mean the position reached the server *previously* — a later failed
+    /// report invalidates that, so they must flip back to `true` here.
     func markNeedsReplay(itemID: String) {
         loadIfNeeded()
-        guard entries[itemID] != nil, entries[itemID]?.needsReplay != false else { return }
+        guard var entry = entries[itemID], !entry.replays else { return }
 
-        entries[itemID]?.needsReplay = true
+        entry.needsReplay = true
+        entries[itemID] = entry
         persist()
     }
 
