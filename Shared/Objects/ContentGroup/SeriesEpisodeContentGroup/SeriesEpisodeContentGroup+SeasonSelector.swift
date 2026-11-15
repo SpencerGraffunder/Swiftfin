@@ -41,6 +41,7 @@ extension SeriesEpisodeContentGroup {
 
         /// Long-press / menu action that queues every downloadable episode of
         /// a season (downloads round 2).
+        @ContentBuilder
         private func seasonDownloadButton(
             _ season: PagingLibraryViewModel<EpisodeLibrary>
         ) -> some View {

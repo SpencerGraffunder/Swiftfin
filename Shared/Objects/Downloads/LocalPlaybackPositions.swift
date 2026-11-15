@@ -21,6 +21,7 @@ import Foundation
 final class LocalPlaybackPositions {
 
     struct Entry: Codable {
+
         var ticks: Int64
         var updatedAt: Date
         var completed: Bool
@@ -49,6 +50,7 @@ final class LocalPlaybackPositions {
 
     func entry(for itemID: String?) -> Entry? {
         guard let itemID else { return nil }
+
         loadIfNeeded()
         return entries[itemID]
     }
@@ -56,12 +58,14 @@ final class LocalPlaybackPositions {
     func remove(itemID: String) {
         loadIfNeeded()
         guard entries[itemID] != nil else { return }
+
         entries[itemID] = nil
         persist()
     }
 
     private func loadIfNeeded() {
         guard !loaded else { return }
+
         loaded = true
 
         guard let data = try? Data(contentsOf: Self.fileURL),
@@ -73,6 +77,7 @@ final class LocalPlaybackPositions {
 
     private func persist() {
         guard let data = try? JSONEncoder().encode(entries) else { return }
+
         try? data.write(to: Self.fileURL, options: .atomic)
     }
 }

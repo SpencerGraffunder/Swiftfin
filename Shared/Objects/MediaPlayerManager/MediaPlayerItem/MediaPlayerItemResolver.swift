@@ -219,7 +219,7 @@ enum MediaPlayerItemResolver {
         if let local = LocalPlaybackPositions.shared.entry(for: item.id) {
             let serverTicks = item.userData?.playbackPositionTicks ?? 0
             if local.ticks == 0, local.completed || local.ticks != serverTicks {
-                configuration.startSeconds = local.ticks == 0 ? .zero : .milliseconds(local.ticks / 10_000)
+                configuration.startSeconds = local.ticks == 0 ? .zero : .milliseconds(local.ticks / 10000)
             }
         }
 

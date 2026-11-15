@@ -32,7 +32,9 @@ final class DownloadNetworkPolicy {
     /// wired Ethernet; while the path is unknown (monitor warm-up, airplane
     /// mode) auto-downloads stay parked.
     static func allowsAutoDownload(allowCellular: Bool) -> Bool {
-        if allowCellular { return true }
+        if allowCellular {
+            return true
+        }
 
         let path = monitor.currentPath
 

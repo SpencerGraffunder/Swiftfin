@@ -287,10 +287,10 @@ final class DownloadManager: ObservableObject {
     /// next play start retries. Existing downloads are never re-queued.
     func autoQueueNextEpisodes(after episode: BaseItemDto, userSession: UserSession) async {
         let count = Defaults[.Experimental.downloadsAutoQueueNext]
-        guard
-            count > 0, episode.type == .episode,
-            let seriesID = episode.seriesID?.nilIfBlank,
-            DownloadNetworkPolicy.allowsAutoDownload(allowCellular: Defaults[.Experimental.downloadsAllowCellular])
+        guard count > 0,
+              episode.type == .episode,
+              let seriesID = episode.seriesID?.nilIfBlank,
+              DownloadNetworkPolicy.allowsAutoDownload(allowCellular: Defaults[.Experimental.downloadsAllowCellular])
         else { return }
 
         await start()
@@ -338,13 +338,17 @@ final class DownloadManager: ObservableObject {
 
             for candidate in episodes {
                 guard let candidateID = candidate.id else { continue }
+
                 if !seenCurrent {
                     seenCurrent = candidateID == episode.id
                     continue
                 }
                 guard candidateID != episode.id, index(of: candidateID) == nil else { continue }
+
                 candidates.append(candidate)
-                if candidates.count >= count { break }
+                if candidates.count >= count {
+                    break
+                }
             }
 
             seenCurrent = true
@@ -411,10 +415,9 @@ final class DownloadManager: ObservableObject {
     /// the check used by the resolver to prefer playing the downloaded
     /// version and by the downloads UI for local affordances.
     func completedLocalDownload(for itemID: String?) -> Download? {
-        guard
-            let itemID,
-            let download = download(for: itemID),
-            download.localFileURL != nil
+        guard let itemID,
+              let download = download(for: itemID),
+              download.localFileURL != nil
         else { return nil }
 
         return download
@@ -697,7 +700,12 @@ final class DownloadManager: ObservableObject {
                 environment: environment
             ),
             download.item.imageSource(.backdrop, itemID: download.item.id, environment: environment),
-            download.item.imageSource(.thumb, itemID: download.item.seriesID, tag: download.item.seriesThumbImageTag, environment: environment),
+            download.item.imageSource(
+                .thumb,
+                itemID: download.item.seriesID,
+                tag: download.item.seriesThumbImageTag,
+                environment: environment
+            ),
         ].compactMap { $0?.url }
 
         guard !candidates.isEmpty else { return }
@@ -716,9 +724,8 @@ final class DownloadManager: ObservableObject {
     /// Queue every downloadable episode of a season (long-press season →
     /// download whole season). Already-queued/completed episodes are skipped.
     func downloadSeason(_ season: BaseItemDto) async {
-        guard
-            let seasonID = season.id,
-            let userSession = Container.shared.currentUserSession()
+        guard let seasonID = season.id,
+              let userSession = Container.shared.currentUserSession()
         else { return }
 
         await start()
