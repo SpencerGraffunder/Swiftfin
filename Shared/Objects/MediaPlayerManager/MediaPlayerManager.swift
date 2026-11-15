@@ -63,6 +63,24 @@ final class MediaPlayerManager {
             .publisher
             .sink { [weak self] _ in self?.currentSession?.cancelBackgroundPause() }
             .store(in: &lifecycleObservations)
+
+        // Sync locally mirrored playback positions that the server missed
+        // (offline viewing) whenever the app comes back to the foreground, and
+        // once shortly after launch (round-4 invisible-offline).
+        Notifications[.applicationWillEnterForeground]
+            .publisher
+            .sink { _ in
+                Task {
+                    try? await Task.sleep(for: .seconds(5))
+                    await LocalPlaybackPositions.shared.replayPending()
+                }
+            }
+            .store(in: &lifecycleObservations)
+
+        Task {
+            try? await Task.sleep(for: .seconds(20))
+            await LocalPlaybackPositions.shared.replayPending()
+        }
     }
 
     isolated deinit {

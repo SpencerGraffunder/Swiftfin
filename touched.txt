@@ -1,0 +1,15 @@
+Shared/Extensions/JellyfinAPI/BaseItemDto/BaseItemDto.swift
+Shared/Objects/Downloads/Download.swift
+Shared/Objects/Downloads/DownloadManager.swift
+Shared/Objects/Downloads/LocalPlaybackPositions.swift
+Shared/Objects/MediaPlayerManager/MediaPlayerItem/MediaPlayerItem.swift
+Shared/Objects/MediaPlayerManager/MediaPlayerItem/MediaPlayerItemResolver.swift
+Shared/Objects/MediaPlayerManager/MediaPlayerManager.swift
+Shared/Objects/MediaPlayerManager/MediaProgressReporter.swift
+Shared/Objects/MediaPlayerManager/PlaybackTemporaryFiles.swift
+Shared/Objects/MediaPlayerManager/Players/MPVMediaPlayer.swift
+Shared/Objects/MediaPlayerManager/PreviewImageProvider.swift
+Shared/Services/UserSession/UserSessionManager.swift
+Shared/Views/Downloads/DownloadLibraryView.swift
+Shared/Objects/Downloads/DownloadSubtitleSupport.swift
+Shared/Objects/Downloads/DownloadTrickplaySupport.swift

@@ -13,6 +13,7 @@ import Foundation
 import JellyfinAPI
 import KeychainSwift
 import Logging
+import Network
 
 extension Container {
 
@@ -28,6 +29,16 @@ extension Container {
 }
 
 final class UserSessionManager: ObservableObject {
+
+    /// Started on first use; warm enough by the time a foreground check runs.
+    /// A cold (not-yet-updated) path reports `.requiresConnection`, which only
+    /// ever defers a sign-out — the safe direction.
+    private nonisolated(unsafe) static let connectivityMonitor: NWPathMonitor = {
+        let monitor = NWPathMonitor()
+        monitor.start(queue: .global(qos: .utility))
+
+        return monitor
+    }()
 
     enum State: Equatable {
 
@@ -215,7 +226,12 @@ final class UserSessionManager: ObservableObject {
 
         let backgroundedInterval = Date.now.timeIntervalSince(Defaults[.backgroundTimeStamp])
 
-        if backgroundedInterval > Defaults[.backgroundSignOutInterval] {
+        // Airplane mode must stay invisible (round 4): the background sign-out
+        // only fires when the device can actually reach a server, otherwise a
+        // flight would end the session the user needs for their downloads.
+        let reachable = Self.connectivityMonitor.currentPath.status == .satisfied
+
+        if backgroundedInterval > Defaults[.backgroundSignOutInterval], reachable {
             await signOut(reason: .backgroundTimeout)
         }
     }

@@ -69,24 +69,30 @@ final class MediaProgressReporter {
         if let itemID = item.baseItem.id, let ticks = info.positionTicks {
             let runtime = item.baseItem.runTimeTicks ?? item.mediaSource.runTimeTicks ?? 0
             let finished = runtime > 0 && Double(ticks) / Double(runtime) >= 0.9
-            LocalPlaybackPositions.shared.record(itemID: itemID, ticks: finished ? 0 : ticks)
+            let offlinePlayback = mediaSession?.intent.offline != nil
+            LocalPlaybackPositions.shared.record(
+                itemID: itemID,
+                ticks: finished ? 0 : ticks,
+                completed: finished,
+                needsReplay: offlinePlayback
+            )
 
             // "Delete after watched" (round 3): drop the local file once the
             // item is played to the end. Server reports above still run.
             if finished,
                Defaults[.Experimental.downloadsDeleteAfterWatched],
-               let download = DownloadManager.shared.completedLocalDownload(for: itemID)
-            {
+               let download = DownloadManager.shared.completedLocalDownload(for: itemID) {
                 DownloadManager.shared.delete(download.id)
             }
         }
 
-        enqueue(Paths.reportPlaybackStopped(info))
+        enqueue(Paths.reportPlaybackStopped(info), localItemID: item.baseItem.id)
     }
 
     private func report(isStart: Bool = false) {
         guard let item else { return }
 
+        let localItemID = item.baseItem.id
         var info = PlaybackStateInfo()
         info.audioStreamIndex = item.selectedAudioStreamIndex
         info.isPaused = mediaSession?.playbackRequestStatus == .paused
@@ -99,7 +105,7 @@ final class MediaProgressReporter {
         info.subtitleStreamIndex = item.selectedSubtitleStreamIndex ?? -1
 
         let report = PlaybackStateReport(info: info, secondarySubtitleStreamIndex: item.selectedSecondarySubtitleStreamIndex ?? -1)
-        enqueue(report.request(isStart: isStart), isProgress: !isStart)
+        enqueue(report.request(isStart: isStart), isProgress: !isStart, localItemID: localItemID)
     }
 
     /// Releases an opened live stream when resolution is discarded before playback starts.
@@ -113,7 +119,7 @@ final class MediaProgressReporter {
         }.value
     }
 
-    private func enqueue(_ request: Get.Request<Void>, isProgress: Bool = false) {
+    private func enqueue(_ request: Get.Request<Void>, isProgress: Bool = false, localItemID: String? = nil) {
         #if DEBUG
         guard Defaults[.sendProgressReports] else { return }
 
@@ -148,6 +154,10 @@ final class MediaProgressReporter {
                 _ = try await client.send(request)
             } catch {
                 logger.warning("Unable to report playback: \(error.localizedDescription)")
+
+                if let localItemID {
+                    LocalPlaybackPositions.shared.markNeedsReplay(itemID: localItemID)
+                }
             }
         }
     }

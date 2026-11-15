@@ -271,6 +271,9 @@ final class DownloadManager: ObservableObject {
 
         try? FileManager.default.removeItem(at: download.posterImageURL)
         try? FileManager.default.removeItem(at: download.backdropImageURL)
+        try? FileManager.default.removeItem(at: download.subtitleDirectoryURL)
+        try? FileManager.default.removeItem(at: download.trickplayDirectoryURL)
+        LocalPlaybackPositions.shared.remove(itemID: downloadID)
         resumeDataByDownloadID[downloadID] = nil
 
         downloads.remove(at: index)
@@ -287,10 +290,10 @@ final class DownloadManager: ObservableObject {
     /// next play start retries. Existing downloads are never re-queued.
     func autoQueueNextEpisodes(after episode: BaseItemDto, userSession: UserSession) async {
         let count = Defaults[.Experimental.downloadsAutoQueueNext]
-        guard
-            count > 0, episode.type == .episode,
-            let seriesID = episode.seriesID?.nilIfBlank,
-            DownloadNetworkPolicy.allowsAutoDownload(allowCellular: Defaults[.Experimental.downloadsAllowCellular])
+        guard count > 0,
+              episode.type == .episode,
+              let seriesID = episode.seriesID?.nilIfBlank,
+              DownloadNetworkPolicy.allowsAutoDownload(allowCellular: Defaults[.Experimental.downloadsAllowCellular])
         else { return }
 
         await start()
@@ -338,13 +341,17 @@ final class DownloadManager: ObservableObject {
 
             for candidate in episodes {
                 guard let candidateID = candidate.id else { continue }
+
                 if !seenCurrent {
                     seenCurrent = candidateID == episode.id
                     continue
                 }
                 guard candidateID != episode.id, index(of: candidateID) == nil else { continue }
+
                 candidates.append(candidate)
-                if candidates.count >= count { break }
+                if candidates.count >= count {
+                    break
+                }
             }
 
             seenCurrent = true
@@ -411,10 +418,9 @@ final class DownloadManager: ObservableObject {
     /// the check used by the resolver to prefer playing the downloaded
     /// version and by the downloads UI for local affordances.
     func completedLocalDownload(for itemID: String?) -> Download? {
-        guard
-            let itemID,
-            let download = download(for: itemID),
-            download.localFileURL != nil
+        guard let itemID,
+              let download = download(for: itemID),
+              download.localFileURL != nil
         else { return nil }
 
         return download
@@ -437,6 +443,7 @@ final class DownloadManager: ObservableObject {
             try FileManager.default.moveItem(at: tempURL, to: destination)
             persistPosterImage(for: downloads[index])
             persistBackdropImage(for: downloads[index])
+            persistOfflineExtras(for: downloads[index])
             markCompleted(downloadID)
         } catch {
             logger.error("Failed to move downloaded file for \(downloadID): \(error.localizedDescription)")
@@ -667,6 +674,61 @@ final class DownloadManager: ObservableObject {
 
     // MARK: - Images
 
+    /// Persists the round-4 offline extras: external subtitle sidecars and
+    /// trickplay sheets (chapter thumbs as fallback). Fire-and-forget like the
+    /// image persistence; each piece updates the Download independently and
+    /// persists the queue.
+    private func persistOfflineExtras(for download: Download) {
+        guard let userSession = Container.shared.currentUserSession() else { return }
+
+        let client = userSession.client
+        let itemID = download.item.id
+        let mediaSource = download.mediaSource
+        let downloadID = download.id
+
+        // Subtitles were server-converted at download time only makes sense
+        // for direct downloads; transcoded files already burned them in.
+        if download.options.method == .direct {
+            Task { [weak self] in
+                let saved = await DownloadSubtitleSupport.persist(
+                    for: download,
+                    itemID: itemID ?? downloadID,
+                    mediaSourceID: mediaSource.id,
+                    mediaSource: mediaSource,
+                    client: client
+                )
+                guard saved.isNotEmpty, let self else { return }
+
+                if let index = self.index(of: downloadID) {
+                    self.downloads[index].subtitles = saved
+                    await self.persist()
+                }
+            }
+
+            Task { [weak self] in
+                let manifest = await DownloadTrickplaySupport.persist(
+                    downloadID: downloadID,
+                    item: download.item,
+                    mediaSource: mediaSource,
+                    client: client
+                )
+                if manifest == nil {
+                    await DownloadTrickplaySupport.persistChapterThumbs(
+                        downloadID: downloadID,
+                        item: download.item,
+                        client: client
+                    )
+                }
+                guard let manifest, let self else { return }
+
+                if let index = self.index(of: downloadID) {
+                    self.downloads[index].trickplay = manifest
+                    await self.persist()
+                }
+            }
+        }
+    }
+
     private func persistPosterImage(for download: Download) {
         let source = download.item.imageSource(
             .primary,
@@ -697,7 +759,12 @@ final class DownloadManager: ObservableObject {
                 environment: environment
             ),
             download.item.imageSource(.backdrop, itemID: download.item.id, environment: environment),
-            download.item.imageSource(.thumb, itemID: download.item.seriesID, tag: download.item.seriesThumbImageTag, environment: environment),
+            download.item.imageSource(
+                .thumb,
+                itemID: download.item.seriesID,
+                tag: download.item.seriesThumbImageTag,
+                environment: environment
+            ),
         ].compactMap { $0?.url }
 
         guard !candidates.isEmpty else { return }
@@ -716,9 +783,8 @@ final class DownloadManager: ObservableObject {
     /// Queue every downloadable episode of a season (long-press season →
     /// download whole season). Already-queued/completed episodes are skipped.
     func downloadSeason(_ season: BaseItemDto) async {
-        guard
-            let seasonID = season.id,
-            let userSession = Container.shared.currentUserSession()
+        guard let seasonID = season.id,
+              let userSession = Container.shared.currentUserSession()
         else { return }
 
         await start()

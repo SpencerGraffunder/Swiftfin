@@ -65,6 +65,12 @@ final class MediaPlayerItem {
     let thumbnailProvider: ThumbnailProvider?
     let url: URL
 
+    /// Locally stored subtitle sidecars for offline (downloaded) playback,
+    /// keyed by Jellyfin stream index. The players prefer these over the
+    /// server delivery URLs (round-4 invisible-offline).
+    @ObservationIgnored
+    var offlineSubtitleURLs: [Int: URL]?
+
     var effectiveSubtitleStreamIndex: Int {
         temporarySubtitleTracks?.primary ?? selectedSubtitleStreamIndex ?? -1
     }
