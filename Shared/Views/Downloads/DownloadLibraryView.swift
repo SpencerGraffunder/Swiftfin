@@ -160,13 +160,10 @@ struct DownloadLibraryView: View {
     @ContentBuilder
     private func rows(in section: DownloadSection) -> some View {
         ForEach(section.downloads) { download in
-            DownloadRow(
-                download: download,
-                isSelecting: isSelecting,
-                isSelected: selectedIDs.contains(download.id)
-            )
-            .contentShape(.rect)
-            .onTapGesture {
+            // The whole row is the tap target (a List-promotes row-wide
+            // Button): in select mode any tap toggles selection, not just a
+            // tap on the checkmark glyph; outside select mode it opens/plays.
+            Button {
                 if isSelecting {
                     if selectedIDs.contains(download.id) {
                         selectedIDs.remove(download.id)
@@ -176,7 +173,15 @@ struct DownloadLibraryView: View {
                 } else {
                     open(download)
                 }
+            } label: {
+                DownloadRow(
+                    download: download,
+                    isSelecting: isSelecting,
+                    isSelected: selectedIDs.contains(download.id)
+                )
+                .contentShape(.rect)
             }
+            .buttonStyle(.plain)
             .if(!isSelecting) { row in
                 row.swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) {
