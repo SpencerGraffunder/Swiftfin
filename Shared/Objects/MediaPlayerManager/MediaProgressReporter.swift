@@ -69,7 +69,11 @@ final class MediaProgressReporter {
         if let itemID = item.baseItem.id, let ticks = info.positionTicks {
             let runtime = item.baseItem.runTimeTicks ?? item.mediaSource.runTimeTicks ?? 0
             let finished = runtime > 0 && Double(ticks) / Double(runtime) >= 0.9
-            LocalPlaybackPositions.shared.record(itemID: itemID, ticks: finished ? 0 : ticks)
+            LocalPlaybackPositions.shared.record(
+                itemID: itemID,
+                ticks: Int64(finished ? 0 : ticks),
+                completed: finished
+            )
 
             // "Delete after watched" (round 3): drop the local file once the
             // item is played to the end. Server reports above still run.
