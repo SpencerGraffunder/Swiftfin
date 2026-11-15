@@ -25,7 +25,18 @@ app_target = project.targets.find { |t| t.name == 'Swiftfin iOS' } ||
 existing = project.targets.find { |t| t.name == target_name }
 project.targets.delete(existing) if existing
 
-target = project.new_target(:unit_test_bundle, target_name, :ios, '16.4')
+# The test bundle @testable-imports the app module, so its deployment target
+# MUST be >= the app's effective IPHONEOS_DEPLOYMENT_TARGET (target-level
+# override first, then project-level), or swift-frontend fails with
+# "compiling for iOS X, but module 'Swiftfin' has a minimum deployment
+# target of iOS Y". Derive it instead of hardcoding so the two can never
+# drift apart again.
+deployment_target = (
+  app_target.build_configurations.map { |c| c.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] } +
+  project.build_configurations.map { |c| c.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] }
+).compact.reject(&:empty?).first || '18.0'
+
+target = project.new_target(:unit_test_bundle, target_name, :ios, deployment_target)
 
 # Sources
 tests_group = project.main_group.find_subpath('Tests', true)
@@ -60,7 +71,7 @@ target.build_configurations.each do |config|
   s['CODE_SIGNING_ALLOWED'] = 'NO'
   s['CODE_SIGNING_REQUIRED'] = 'NO'
   s['CODE_SIGN_IDENTITY'] = ''
-  s['IPHONEOS_DEPLOYMENT_TARGET'] = '16.4'
+  s['IPHONEOS_DEPLOYMENT_TARGET'] = deployment_target
   s['SWIFT_VERSION'] = '5.0'
   s['SUPPORTS_MACCATALYST'] = 'NO'
 end
