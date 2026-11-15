@@ -27,6 +27,18 @@ enum MediaPlayerItemResolver {
             return try resolveOffline(intent: intent, offline: offline, profile: profile)
         }
 
+        // Fork addition (downloads round 2): an item that has been fully
+        // downloaded plays its local file even when the caller produced a
+        // plain online intent (detail play button, episode-card tap, autoplay
+        // next episode). Deleting the download restores online playback.
+        if let local = DownloadManager.shared.completedLocalDownload(for: intent.entry.itemID) {
+            let offline: OfflinePlayback = .init(fileURL: local.fileURL, mediaSource: local.mediaSource)
+            var offlineIntent = intent
+            offlineIntent.offline = offline
+
+            return try resolveOffline(intent: offlineIntent, offline: offline, profile: profile)
+        }
+
         try Task.checkCancellation()
         guard var initialItem = intent.entry.value else { throw ItemStore.StoreError.itemUnavailable }
 

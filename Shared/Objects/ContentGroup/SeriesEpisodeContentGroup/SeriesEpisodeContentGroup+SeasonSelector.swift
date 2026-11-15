@@ -6,6 +6,7 @@
 // Copyright (c) 2026 Jellyfin & Jellyfin Contributors
 //
 
+import Defaults
 import JellyfinAPI
 import SwiftUI
 
@@ -35,6 +36,21 @@ extension SeriesEpisodeContentGroup {
             router.route(to: .library(library: season.library))
         }
 
+        @Default(.Experimental.downloads)
+        private var isDownloadsEnabled
+
+        /// Long-press / menu action that queues every downloadable episode of
+        /// a season (downloads round 2).
+        private func seasonDownloadButton(
+            _ season: PagingLibraryViewModel<EpisodeLibrary>
+        ) -> some View {
+            Button(L10n.downloadSeason, systemImage: "arrow.down.circle") {
+                Task {
+                    await DownloadManager.shared.downloadSeason(season.library.parent)
+                }
+            }
+        }
+
         @ContentBuilder
         private func singleSeasonButton(
             _ season: PagingLibraryViewModel<EpisodeLibrary>
@@ -56,6 +72,11 @@ extension SeriesEpisodeContentGroup {
             .edgePadding(.horizontal)
             .accessibilityAction(named: Text(L10n.openLibrary)) {
                 openEpisodes(for: season)
+            }
+            .if(isDownloadsEnabled) { view in
+                view.contextMenu {
+                    seasonDownloadButton(season)
+                }
             }
         }
 
@@ -119,6 +140,10 @@ extension SeriesEpisodeContentGroup {
                         }
                     }
                     .disabled(selectedSeason == nil)
+
+                    if isDownloadsEnabled, let selectedSeason {
+                        seasonDownloadButton(selectedSeason)
+                    }
 
                     Divider()
 

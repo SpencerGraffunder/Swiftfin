@@ -11,7 +11,9 @@ import FactoryKit
 import Foundation
 import JellyfinAPI
 import Logging
+import Nuke
 import SwiftUI
+import UIKit
 
 /// Manages the local downloads queue (issue #1784, #1788).
 ///
@@ -267,12 +269,20 @@ final class DownloadManager: ObservableObject {
         }
 
         try? FileManager.default.removeItem(at: download.posterImageURL)
+        try? FileManager.default.removeItem(at: download.backdropImageURL)
         resumeDataByDownloadID[downloadID] = nil
 
         downloads.remove(at: index)
         Task {
             await persist()
             processQueue()
+        }
+    }
+
+    /// Remove several downloads at once (downloads-library multi-select).
+    func deleteAll(in downloadIDs: some Sequence<String>) {
+        for downloadID in downloadIDs {
+            delete(downloadID)
         }
     }
 
@@ -296,10 +306,39 @@ final class DownloadManager: ObservableObject {
 
     // MARK: - Delegate callbacks (called on MainActor)
 
-    func setProgress(_ progress: Double, for downloadID: String) {
+    func setProgress(
+        _ progress: Double,
+        bytesWritten: Int64?,
+        totalBytesExpected: Int64?,
+        speed: Double?,
+        for downloadID: String
+    ) {
         guard let index = index(of: downloadID) else { return }
 
         downloads[index].progress = min(1, max(0, progress))
+
+        if let bytesWritten {
+            downloads[index].bytesWritten = bytesWritten
+        }
+        if let totalBytesExpected {
+            downloads[index].totalBytesExpected = totalBytesExpected
+        }
+        if let speed {
+            downloads[index].speedBytesPerSecond = speed
+        }
+    }
+
+    /// The completed download for an item whose file is actually on disk —
+    /// the check used by the resolver to prefer playing the downloaded
+    /// version and by the downloads UI for local affordances.
+    func completedLocalDownload(for itemID: String?) -> Download? {
+        guard
+            let itemID,
+            let download = download(for: itemID),
+            download.localFileURL != nil
+        else { return nil }
+
+        return download
     }
 
     func moveDownloadFile(_ downloadID: String, from tempURL: URL) {
@@ -318,6 +357,7 @@ final class DownloadManager: ObservableObject {
 
             try FileManager.default.moveItem(at: tempURL, to: destination)
             persistPosterImage(for: downloads[index])
+            persistBackdropImage(for: downloads[index])
             markCompleted(downloadID)
         } catch {
             logger.error("Failed to move downloaded file for \(downloadID): \(error.localizedDescription)")
@@ -562,6 +602,72 @@ final class DownloadManager: ObservableObject {
         }
     }
 
+    /// Persists the landscape backdrop (the episode/series preview image) so
+    /// the downloads library and offline item views can show previews in
+    /// airplane mode. Tries the same URL candidates the poster grid uses:
+    /// the parent backdrop, the item's own backdrop, then the series thumb.
+    private func persistBackdropImage(for download: Download) {
+        let environment = ImageSourceOptions(maxWidth: 640, maxHeight: nil)
+
+        let candidates = [
+            download.item.imageSource(
+                .backdrop,
+                itemID: download.item.parentBackdropItemID,
+                tag: download.item.parentBackdropImageTags?.first,
+                environment: environment
+            ),
+            download.item.imageSource(.backdrop, itemID: download.item.id, environment: environment),
+            download.item.imageSource(.thumb, itemID: download.item.seriesID, tag: download.item.seriesThumbImageTag, environment: environment),
+        ].compactMap { $0?.url }
+
+        guard !candidates.isEmpty else { return }
+
+        Task {
+            let pipeline: ImagePipeline = .Swiftfin.posters
+            for url in candidates {
+                if let image = try? await pipeline.image(for: url), let data = image.jpegData(compressionQuality: 0.85) {
+                    try? data.write(to: download.backdropImageURL)
+                    return
+                }
+            }
+        }
+    }
+
+    /// Queue every downloadable episode of a season (long-press season →
+    /// download whole season). Already-queued/completed episodes are skipped.
+    func downloadSeason(_ season: BaseItemDto) async {
+        guard
+            let seasonID = season.id,
+            let userSession = Container.shared.currentUserSession()
+        else { return }
+
+        await start()
+
+        var parameters = Paths.GetEpisodesParameters()
+        parameters.enableUserData = true
+        parameters.fields = PosterSubtitleField.itemFields + [.overview]
+        parameters.seasonID = seasonID
+        parameters.userID = userSession.user.id
+
+        do {
+            let response = try await userSession.send(
+                Paths.getEpisodes(seriesID: seasonID, parameters: parameters)
+            )
+
+            let episodes = (response.value.items ?? []).filter { item in
+                item.type == .episode,
+                item.mediaSources?.isEmpty == false,
+                download(for: item.id)?.state != .completed
+            }
+
+            for episode in episodes {
+                await download(episode, options: .direct(episode))
+            }
+        } catch {
+            logger.error("Failed to fetch season \(seasonID) for download: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Helpers
 
     private func index(of downloadID: String) -> Int? {
@@ -577,6 +683,11 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
 
     private let manager: DownloadManager
 
+    /// Last (time, bytes) transfer samples for speed estimation, guarded by a
+    /// lock because URLSession delivers callbacks off the main thread.
+    private var speedSamples: [String: (Date, Int64)] = [:]
+    private let speedLock = NSLock()
+
     init(manager: DownloadManager) {
         self.manager = manager
     }
@@ -588,12 +699,36 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
-        guard let downloadID = downloadID(for: downloadTask), totalBytesExpectedToWrite > 0 else { return }
+        guard let downloadID = downloadID(for: downloadTask) else { return }
 
-        let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        let progress = totalBytesExpectedToWrite > 0
+            ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+            : 0
+
+        // Smoothed instantaneous speed: sample every ~2 s of transfer so the
+        // downloads row can show MB/s and a time-remaining estimate.
+        var speed: Double?
+        speedLock.lock()
+        let now = Date()
+        if let (sampleTime, sampleBytes) = speedSamples[downloadID] {
+            let elapsed = now.timeIntervalSince(sampleTime)
+            if elapsed >= 2 {
+                speed = max(0, Double(totalBytesWritten - sampleBytes) / elapsed)
+                speedSamples[downloadID] = (now, totalBytesWritten)
+            }
+        } else {
+            speedSamples[downloadID] = (now, totalBytesWritten)
+        }
+        speedLock.unlock()
 
         Task { @MainActor in
-            self.manager.setProgress(progress, for: downloadID)
+            self.manager.setProgress(
+                progress,
+                bytesWritten: totalBytesWritten,
+                totalBytesExpected: totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : nil,
+                speed: speed,
+                for: downloadID
+            )
         }
     }
 

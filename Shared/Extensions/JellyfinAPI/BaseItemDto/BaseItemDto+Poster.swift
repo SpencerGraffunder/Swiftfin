@@ -249,6 +249,11 @@ private struct BaseItemDtoPosterContextMenu: View {
 
         ShuffleButton(item: item)
 
+        // Fork addition (downloads round 2): download/cancel from the same
+        // long-press menu on episode and movie posters (gated internally on
+        // the experimental downloads flag and item type).
+        DownloadPosterContextMenuItem(item: item)
+
         if item.canBePlayed {
             Button(isPlayed ? L10n.markAsUnplayed : L10n.markAsPlayed, systemImage: isPlayed ? "circle" : "checkmark.circle") {
                 Task {
