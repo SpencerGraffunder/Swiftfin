@@ -247,6 +247,7 @@ final class DownloadManager: ObservableObject {
         resumeDataByDownloadID[downloadID] = nil
         downloads[index].state = .queued
         downloads[index].progress = 0
+        downloads[index].failureReason = nil
         processQueue()
         Task { await persist() }
     }
@@ -280,6 +281,84 @@ final class DownloadManager: ObservableObject {
     }
 
     /// Remove several downloads at once (downloads-library multi-select).
+    /// Queue the next N episodes for download after one starts playing
+    /// (round-3 "download next n episodes"). Gated by the Wi-Fi/cellular
+    /// policy; failures (offline, removed show) are logged and skipped so the
+    /// next play start retries. Existing downloads are never re-queued.
+    func autoQueueNextEpisodes(after episode: BaseItemDto, userSession: UserSession) async {
+        let count = Defaults[.Experimental.downloadsAutoQueueNext]
+        guard
+            count > 0, episode.type == .episode,
+            let seriesID = episode.seriesID?.nilIfBlank,
+            DownloadNetworkPolicy.allowsAutoDownload(allowCellular: Defaults[.Experimental.downloadsAllowCellular])
+        else { return }
+
+        await start()
+
+        let client = userSession.client
+        let userID = userSession.user.id
+
+        var seasons: [BaseItemDto]
+        do {
+            var parameters = Paths.GetSeasonsParameters()
+            parameters.userID = userID
+            let response = try await client.send(Paths.getSeasons(seriesID: seriesID, parameters: parameters))
+            seasons = (response.value.items ?? []).sorted { ($0.indexNumber ?? 0) < ($1.indexNumber ?? 0) }
+        } catch {
+            logger.warning("Auto-queue: unable to load seasons for \(seriesID): \(error.localizedDescription)")
+
+            return
+        }
+
+        var seasonIndex = seasons.firstIndex { $0.id == episode.seasonID }
+            ?? seasons.firstIndex { $0.indexNumber == episode.parentIndexNumber }
+            ?? 0
+
+        var candidates: [BaseItemDto] = []
+        var seenCurrent = seasonIndex > 0
+
+        while seasonIndex < seasons.count, candidates.count < count {
+            defer { seasonIndex += 1 }
+            guard let seasonID = seasons[seasonIndex].id else { continue }
+
+            var parameters = Paths.GetEpisodesParameters()
+            parameters.seasonID = seasonID
+            parameters.userID = userID
+            parameters.fields = PosterSubtitleField.itemFields
+
+            let episodes: [BaseItemDto]
+            do {
+                let response = try await client.send(Paths.getEpisodes(seriesID: seasonID, parameters: parameters))
+                episodes = (response.value.items ?? []).sorted { ($0.indexNumber ?? 0) < ($1.indexNumber ?? 0) }
+            } catch {
+                logger.warning("Auto-queue: unable to load episodes for \(seasonID): \(error.localizedDescription)")
+
+                break
+            }
+
+            for candidate in episodes {
+                guard let candidateID = candidate.id else { continue }
+                if !seenCurrent {
+                    seenCurrent = candidateID == episode.id
+                    continue
+                }
+                guard candidateID != episode.id, index(of: candidateID) == nil else { continue }
+                candidates.append(candidate)
+                if candidates.count >= count { break }
+            }
+
+            seenCurrent = true
+        }
+
+        for candidate in candidates {
+            await download(candidate, options: .direct(candidate))
+        }
+
+        if candidates.isNotEmpty {
+            logger.info("Auto-queue: queued \(candidates.count) episode(s) after \(episode.id ?? "?")")
+        }
+    }
+
     func deleteAll(in downloadIDs: some Sequence<String>) {
         for downloadID in downloadIDs {
             delete(downloadID)
@@ -361,7 +440,7 @@ final class DownloadManager: ObservableObject {
             markCompleted(downloadID)
         } catch {
             logger.error("Failed to move downloaded file for \(downloadID): \(error.localizedDescription)")
-            markFailed(downloadID)
+            markFailed(downloadID, reason: error.localizedDescription)
         }
     }
 
@@ -373,10 +452,11 @@ final class DownloadManager: ObservableObject {
         Task { await persist() }
     }
 
-    func markFailed(_ downloadID: String) {
+    func markFailed(_ downloadID: String, reason: String? = nil) {
         guard let index = index(of: downloadID) else { return }
 
         downloads[index].state = .failed
+        downloads[index].failureReason = reason
         Task { await persist() }
     }
 
@@ -406,7 +486,7 @@ final class DownloadManager: ObservableObject {
         Task { @MainActor in
             guard let index = self.index(of: download.id) else { return }
             guard let url = await self.resolveStreamURL(for: download) else {
-                self.markFailed(download.id)
+                self.markFailed(download.id, reason: L10n.downloadStreamUnavailable)
                 self.processQueue()
 
                 return
@@ -655,9 +735,9 @@ final class DownloadManager: ObservableObject {
             )
 
             let episodes = (response.value.items ?? []).filter { item in
-                item.type == .episode,
-                item.mediaSources?.isEmpty == false,
-                download(for: item.id)?.state != .completed
+                item.type == .episode
+                    && item.mediaSources?.isEmpty == false
+                    && download(for: item.id)?.state != .completed
             }
 
             for episode in episodes {
@@ -755,7 +835,7 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
             try FileManager.default.moveItem(at: location, to: stagingURL)
         } catch {
             Task { @MainActor in
-                self.manager.markFailed(downloadID)
+                self.manager.markFailed(downloadID, reason: error.localizedDescription)
                 self.manager.notifyTaskFinished(downloadID)
             }
 
@@ -783,7 +863,7 @@ final class DownloadSessionDelegate: NSObject, URLSessionDownloadDelegate, @unch
                     self.manager.resumeDataByDownloadID[downloadID] = resumeData
                 }
             } else {
-                self.manager.markFailed(downloadID)
+                self.manager.markFailed(downloadID, reason: error.localizedDescription)
             }
 
             self.manager.notifyTaskFinished(downloadID)

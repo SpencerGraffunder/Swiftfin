@@ -403,6 +403,25 @@ extension Defaults.Keys {
             UserKey("downloadsConcurrency", default: 2)
         }
 
+        /// Automatically queue the next N episodes for download while an
+        /// episode is playing (0 = off). Round-3 downloads feature.
+        static var downloadsAutoQueueNext: Key<Int> {
+            UserKey("downloadsAutoQueueNext", default: 0)
+        }
+
+        /// Whether auto-queued downloads may start on a cellular connection.
+        /// Manual downloads are never gated by this.
+        static var downloadsAllowCellular: Key<Bool> {
+            UserKey("downloadsAllowCellular", default: false)
+        }
+
+        /// Remove the local file once a downloaded episode/movie is watched
+        /// to completion. Position + played state are still reported to the
+        /// server when reachable.
+        static var downloadsDeleteAfterWatched: Key<Bool> {
+            UserKey("downloadsDeleteAfterWatched", default: false)
+        }
+
         static var serverConnectionAutoSwitch: Key<Bool> {
             UserKey("experimentalServerConnectionAutoSwitch", default: false)
         }

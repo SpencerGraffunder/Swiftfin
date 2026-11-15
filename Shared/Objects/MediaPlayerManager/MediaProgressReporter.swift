@@ -64,6 +64,23 @@ final class MediaProgressReporter {
         info.positionTicks = mediaSession?.observedSeconds.ticks
         info.sessionID = item.playSessionID
 
+        // Mirror the last position locally so downloaded playback keeps an
+        // accurate resume point even when these server reports fail offline.
+        if let itemID = item.baseItem.id, let ticks = info.positionTicks {
+            let runtime = item.baseItem.runTimeTicks ?? item.mediaSource.runTimeTicks ?? 0
+            let finished = runtime > 0 && Double(ticks) / Double(runtime) >= 0.9
+            LocalPlaybackPositions.shared.record(itemID: itemID, ticks: finished ? 0 : ticks)
+
+            // "Delete after watched" (round 3): drop the local file once the
+            // item is played to the end. Server reports above still run.
+            if finished,
+               Defaults[.Experimental.downloadsDeleteAfterWatched],
+               let download = DownloadManager.shared.completedLocalDownload(for: itemID)
+            {
+                DownloadManager.shared.delete(download.id)
+            }
+        }
+
         enqueue(Paths.reportPlaybackStopped(info))
     }
 

@@ -212,6 +212,17 @@ enum MediaPlayerItemResolver {
         var configuration = intent.configuration
         // Local files direct-play; never ask for server transcoding.
         configuration.compatibilityMode = .directPlay
+
+        // Prefer the locally mirrored position: while offline the server never
+        // receives progress reports, so its playbackPositionTicks is stale and
+        // the item would resume from the wrong spot.
+        if let local = LocalPlaybackPositions.shared.entry(for: item.id) {
+            let serverTicks = item.userData?.playbackPositionTicks ?? 0
+            if local.ticks == 0, local.completed || local.ticks != serverTicks {
+                configuration.startSeconds = local.ticks == 0 ? .zero : .milliseconds(local.ticks / 10_000)
+            }
+        }
+
         configuration.prepare(for: item, source: mediaSource, profile: profile)
         configuration.finish(source: mediaSource, initialSource: mediaSource)
 
