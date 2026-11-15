@@ -160,6 +160,75 @@ struct Download: Codable, Identifiable, Hashable, Sendable {
     /// decoded-nil for downloads persisted before this field existed.
     var failureReason: String?
 
+    /// A persisted external subtitle sidecar (round 4, invisible-offline).
+    struct SubtitleFile: Codable, Hashable, Sendable {
+
+        var index: Int
+        var format: String
+        var codec: String?
+        var language: String?
+        var title: String?
+        var displayTitle: String?
+        var isHearingImpaired: Bool
+    }
+
+    /// Geometry of the persisted trickplay thumbnail sheets (round 4),
+    /// mirroring the smallest trickplay resolution the online provider picks.
+    struct TrickplayManifest: Codable, Hashable, Sendable {
+
+        var width: Int
+        var height: Int
+        var columns: Int
+        var rows: Int
+        var intervalMilliseconds: Int
+        var sheetCount: Int
+    }
+
+    /// Persisted subtitle sidecars (nil for downloads stored before round 4).
+    var subtitles: [SubtitleFile]?
+
+    /// Persisted trickplay geometry (nil when nothing was stored).
+    var trickplay: TrickplayManifest?
+
+    /// The subtitle directory for this download.
+    var subtitleDirectoryURL: URL {
+        DownloadStorage.subtitleDirectory(for: id)
+    }
+
+    /// The trickplay directory for this download.
+    var trickplayDirectoryURL: URL {
+        DownloadStorage.trickplayDirectory(for: id)
+    }
+
+    /// The local subtitle file for a stream index, when it exists on disk.
+    func localSubtitleURL(index: Int) -> URL? {
+        guard let match = subtitles?.first(where: { $0.index == index }) else { return nil }
+
+        let url = subtitleDirectoryURL.appendingPathComponent("\(index).\(match.format)")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// The trickplay manifest, but only when the first sheet actually exists
+    /// on disk — same "playable offline" discipline as `localFileURL`.
+    var localTrickplay: TrickplayManifest? {
+        guard let trickplay,
+              FileManager.default.fileExists(atPath: trickplaySheetURL(0).path)
+        else { return nil }
+
+        return trickplay
+    }
+
+    /// The on-disk trickplay sheet for an index (existence not guaranteed past
+    /// the manifest's sheet count).
+    func trickplaySheetURL(_ index: Int) -> URL {
+        DownloadStorage.trickplaySheetURL(for: id, width: trickplay?.width ?? 0, index: index)
+    }
+
+    /// The persisted chapter thumbnail for a chapter image index.
+    func localChapterImageURL(_ index: Int) -> URL {
+        trickplayDirectoryURL.appendingPathComponent("chapters/\(index).jpg")
+    }
+
     init(
         item: BaseItemDto,
         mediaSource: MediaSourceInfo,
@@ -197,6 +266,36 @@ enum DownloadStorage {
     /// The directory that stores persisted poster images.
     static var imageDirectory: URL {
         makeDirectory("DownloadImages")
+    }
+
+    /// The per-download directory for persisted subtitle sidecars (round 4).
+    static func subtitleDirectory(for downloadID: String) -> URL {
+        makeSubdirectory(parent: makeDirectory("DownloadSubtitles"), name: downloadID)
+    }
+
+    /// The per-download directory for trickplay sheets + chapter thumbs
+    /// (round 4).
+    static func trickplayDirectory(for downloadID: String) -> URL {
+        makeSubdirectory(parent: makeDirectory("DownloadTrickplay"), name: downloadID)
+    }
+
+    /// One trickplay sheet on disk (`<width>/<index>.jpg`, like the server).
+    static func trickplaySheetURL(for downloadID: String, width: Int, index: Int) -> URL {
+        trickplayDirectory(for: downloadID)
+            .appendingPathComponent(String(width), isDirectory: false)
+            .appendingPathComponent("\(index).jpg")
+    }
+
+    /// The persisted trickplay geometry for a download.
+    static func trickplayManifestURL(for downloadID: String) -> URL {
+        trickplayDirectory(for: downloadID).appendingPathComponent("manifest.json")
+    }
+
+    private static func makeSubdirectory(parent: URL, name: String) -> URL {
+        let url = parent.appendingPathComponent(name, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+
+        return url
     }
 
     private static func makeDirectory(_ name: String) -> URL {

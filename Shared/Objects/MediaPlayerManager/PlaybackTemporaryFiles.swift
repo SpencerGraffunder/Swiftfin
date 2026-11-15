@@ -16,6 +16,11 @@ final class PlaybackTemporaryFiles {
     private let directoryPath = "playback/\(UUID().uuidString)"
     private let session: URLSession
 
+    /// When set, images are served straight from disk (offline trickplay,
+    /// round 4): no networking, no temp copies, and `remove()` never deletes
+    /// the persisted originals.
+    private let localFileURL: ((Int) -> URL?)?
+
     private var downloadURL: ((Int) -> URL?)?
     private var files: [Int: Task<URL?, Never>] = [:]
     private var latestImage: (id: Int, image: Task<UIImage?, Never>)?
@@ -24,11 +29,21 @@ final class PlaybackTemporaryFiles {
 
     init(accessToken: String?) {
         self.accessToken = accessToken
+        self.localFileURL = nil
 
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
         configuration.timeoutIntervalForRequest = 20
 
+        session = URLSession(configuration: configuration)
+    }
+
+    init(localFileURL: @escaping (Int) -> URL?) {
+        self.accessToken = nil
+        self.localFileURL = localFileURL
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
         session = URLSession(configuration: configuration)
     }
 
@@ -41,6 +56,11 @@ final class PlaybackTemporaryFiles {
     /// Stops at the first image that fails, since trickplay doesn't say how many sheets exist.
     func download(for provider: PreviewImageProvider) {
         guard !isRemoved, preloadTask == nil else { return }
+
+        // Local mode: everything already on disk; nothing to preload.
+        if localFileURL != nil {
+            return
+        }
 
         downloadURL = { [weak provider] id in provider?.downloadURL(for: id) }
         let ids = provider.downloadIDs
@@ -80,7 +100,13 @@ final class PlaybackTemporaryFiles {
 
     /// Downloads once and shares the result. Cancelling a caller doesn't cancel the download.
     private func file(for id: Int) async -> URL? {
-        guard !isRemoved, let url = downloadURL?(id) else { return nil }
+        guard !isRemoved else { return nil }
+
+        if let localFileURL {
+            return localFileURL(id)
+        }
+
+        guard let url = downloadURL?(id) else { return nil }
 
         let file = files[id] ?? startDownload(id: id, url: url)
         let value = await file.value
@@ -140,6 +166,9 @@ final class PlaybackTemporaryFiles {
     }
 
     /// Cancels downloads and deletes every file. Later lookups return `nil`.
+    ///
+    /// Local mode keeps the persisted files on disk (they belong to the
+    /// download, not this playback session).
     func remove() {
         guard !isRemoved else { return }
 
@@ -149,6 +178,8 @@ final class PlaybackTemporaryFiles {
         files.values.forEach { $0.cancel() }
         files.removeAll()
         latestImage = nil
+
+        guard localFileURL == nil else { return }
 
         session.invalidateAndCancel()
         try? Folder.temporary.subfolder(at: directoryPath).delete()

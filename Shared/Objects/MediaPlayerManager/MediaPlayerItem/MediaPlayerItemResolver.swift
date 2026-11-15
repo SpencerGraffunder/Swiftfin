@@ -232,18 +232,67 @@ enum MediaPlayerItemResolver {
             mediaSource: mediaSource
         )
 
-        return .init(
+        // Round-4 invisible-offline: everything the online path builds from
+        // the server is rebuilt from files persisted with the download.
+        let download = DownloadManager.shared.completedLocalDownload(for: item.id)
+
+        let chapters: [ChapterInfo.FullInfo] = if let download {
+            item.fullChapterInfo(localImageURLFor: { index in
+                let url = download.localChapterImageURL(index)
+                return FileManager.default.fileExists(atPath: url.path) ? url : nil
+            })
+        } else {
+            []
+        }
+
+        let manifest = download?.localTrickplay
+        let temporaryFiles: PlaybackTemporaryFiles
+        let previewImageProvider: PreviewImageProvider?
+
+        if let download, let manifest {
+            temporaryFiles = PlaybackTemporaryFiles(localFileURL: { id in
+                guard id >= 0, id < manifest.sheetCount else { return nil }
+
+                let url = DownloadStorage.trickplaySheetURL(for: download.id, width: manifest.width, index: id)
+                return FileManager.default.fileExists(atPath: url.path) ? url : nil
+            })
+        } else {
+            temporaryFiles = PlaybackTemporaryFiles(accessToken: nil)
+        }
+
+        previewImageProvider = PreviewImageProvider(
+            option: configuration.previewImageScrubbing,
+            localTrickplay: manifest,
+            chapters: chapters,
+            sheetURL: { _ in nil },
+            resolveImage: temporaryFiles.image(for:)
+        )
+
+        var offlineSubtitleURLs: [Int: URL]?
+        if let download {
+            let urls = Dictionary(
+                uniqueKeysWithValues: (download.subtitles ?? []).compactMap { file in
+                    download.localSubtitleURL(index: file.index).map { (file.index, $0) }
+                }
+            )
+            offlineSubtitleURLs = urls.isEmpty ? nil : urls
+        }
+
+        let resolved = MediaPlayerItem(
             baseItem: item,
             mediaSource: mediaSource,
             playSessionID: UUID().uuidString,
             url: offline.fileURL,
             configuration: configuration,
             deviceProfile: deviceProfile,
-            chapters: [],
-            temporaryFiles: PlaybackTemporaryFiles(accessToken: nil),
-            previewImageProvider: nil,
+            chapters: chapters,
+            temporaryFiles: temporaryFiles,
+            previewImageProvider: previewImageProvider,
             thumbnailProvider: nil
         )
+        resolved.offlineSubtitleURLs = offlineSubtitleURLs
+
+        return resolved
     }
 
     private static func getMaxBitrate(

@@ -106,6 +106,50 @@ final class PreviewImageProvider {
         }
     }
 
+    /// Offline variant (round 4): trickplay geometry comes from the persisted
+    /// manifest and sheets from disk, so no client/network is involved.
+    init?(
+        option: PreviewImageScrubbingOption,
+        localTrickplay manifest: Download.TrickplayManifest?,
+        chapters: [ChapterInfo.FullInfo],
+        sheetURL: @escaping (Int) -> URL?,
+        resolveImage: @escaping (Int) async -> UIImage?
+    ) {
+        // Chapters without any image would only scrub to black frames.
+        let chapterSource = chapters.contains { $0.imageSource?.url != nil } ? Source.chapters(chapters) : nil
+
+        let localTrickplay: Source? = manifest.flatMap { manifest in
+            guard manifest.width > 0,
+                  manifest.height > 0,
+                  manifest.columns > 0,
+                  manifest.rows > 0,
+                  manifest.intervalMilliseconds > 0
+            else { return nil }
+
+            return .trickplay(Trickplay(
+                columns: manifest.columns,
+                rows: manifest.rows,
+                tileSize: CGSize(width: manifest.width, height: manifest.height),
+                interval: .milliseconds(manifest.intervalMilliseconds),
+                sheetURL: sheetURL
+            ))
+        }
+
+        let source: Source? = switch option {
+        case .disabled:
+            nil
+        case .chapters:
+            chapterSource
+        case let .trickplay(fallbackToChapters):
+            localTrickplay ?? (fallbackToChapters ? chapterSource : nil)
+        }
+
+        guard let source else { return nil }
+
+        self.source = source
+        self.resolveImage = resolveImage
+    }
+
     private static func trickplay(item: BaseItemDto, mediaSourceID: String?, client: JellyfinClient) -> Trickplay? {
         guard let itemID = item.id, let mediaSourceID, let resolutions = item.trickplay?[mediaSourceID] else { return nil }
 

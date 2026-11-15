@@ -485,6 +485,26 @@ extension BaseItemDto {
 
     // MARK: Chapter Images
 
+    /// Offline variant of `fullChapterInfo(using:)` (round 4): chapter
+    /// thumbnails come from files persisted with the download instead of
+    /// server URLs, so the chapter list and its images survive airplane mode.
+    func fullChapterInfo(localImageURLFor: (Int) -> URL?) -> [ChapterInfo.FullInfo] {
+        (chapters ?? [])
+            .enumerated()
+            .compacted(using: \.element.startPositionTicks)
+            .sorted(using: \.element.startPositionTicks)
+            .map { i, chapter in
+                guard let imageURL = localImageURLFor(i) else {
+                    return .init(chapterInfo: chapter)
+                }
+
+                return .init(
+                    chapterInfo: chapter,
+                    imageSource: .init(url: imageURL)
+                )
+            }
+    }
+
     func fullChapterInfo(using client: JellyfinClient) -> [ChapterInfo.FullInfo] {
         (chapters ?? [])
             .enumerated()

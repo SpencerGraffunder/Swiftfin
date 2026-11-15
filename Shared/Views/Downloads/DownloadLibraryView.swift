@@ -7,6 +7,7 @@
 //
 
 import Defaults
+import FactoryKit
 import JellyfinAPI
 import SwiftUI
 import UIKit
@@ -141,6 +142,21 @@ struct DownloadLibraryView: View {
         }
     }
 
+    /// A completed download plays straight from disk (round-4
+    /// invisible-offline): routing to `.item` needs the server (getFullItem)
+    /// and dead-ends in airplane mode.
+    private func open(_ download: Download) {
+        if download.localFileURL != nil, let userSession = Container.shared.currentUserSession() {
+            var intent = PlaybackIntent(item: download.item)
+            intent.offline = .init(fileURL: download.fileURL, mediaSource: download.mediaSource)
+
+            let session = Container.shared.mediaPlayerManager().play(intent: intent, userSession: userSession)
+            router.route(to: .videoPlayer(session: session))
+        } else {
+            router.route(to: .item(item: download.item))
+        }
+    }
+
     @ContentBuilder
     private func rows(in section: DownloadSection) -> some View {
         ForEach(section.downloads) { download in
@@ -158,7 +174,7 @@ struct DownloadLibraryView: View {
                         selectedIDs.insert(download.id)
                     }
                 } else {
-                    router.route(to: .item(item: download.item))
+                    open(download)
                 }
             }
             .if(!isSelecting) { row in

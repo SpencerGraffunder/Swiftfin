@@ -271,6 +271,9 @@ final class DownloadManager: ObservableObject {
 
         try? FileManager.default.removeItem(at: download.posterImageURL)
         try? FileManager.default.removeItem(at: download.backdropImageURL)
+        try? FileManager.default.removeItem(at: download.subtitleDirectoryURL)
+        try? FileManager.default.removeItem(at: download.trickplayDirectoryURL)
+        LocalPlaybackPositions.shared.remove(itemID: downloadID)
         resumeDataByDownloadID[downloadID] = nil
 
         downloads.remove(at: index)
@@ -440,6 +443,7 @@ final class DownloadManager: ObservableObject {
             try FileManager.default.moveItem(at: tempURL, to: destination)
             persistPosterImage(for: downloads[index])
             persistBackdropImage(for: downloads[index])
+            persistOfflineExtras(for: downloads[index])
             markCompleted(downloadID)
         } catch {
             logger.error("Failed to move downloaded file for \(downloadID): \(error.localizedDescription)")
@@ -669,6 +673,61 @@ final class DownloadManager: ObservableObject {
     }
 
     // MARK: - Images
+
+    /// Persists the round-4 offline extras: external subtitle sidecars and
+    /// trickplay sheets (chapter thumbs as fallback). Fire-and-forget like the
+    /// image persistence; each piece updates the Download independently and
+    /// persists the queue.
+    private func persistOfflineExtras(for download: Download) {
+        guard let userSession = Container.shared.currentUserSession() else { return }
+
+        let client = userSession.client
+        let itemID = download.item.id
+        let mediaSource = download.mediaSource
+        let downloadID = download.id
+
+        // Subtitles were server-converted at download time only makes sense
+        // for direct downloads; transcoded files already burned them in.
+        if download.options.method == .direct {
+            Task { [weak self] in
+                let saved = await DownloadSubtitleSupport.persist(
+                    for: download,
+                    itemID: itemID ?? downloadID,
+                    mediaSourceID: mediaSource.id,
+                    mediaSource: mediaSource,
+                    client: client
+                )
+                guard saved.isNotEmpty, let self else { return }
+
+                if let index = self.index(of: downloadID) {
+                    self.downloads[index].subtitles = saved
+                    await self.persist()
+                }
+            }
+
+            Task { [weak self] in
+                let manifest = await DownloadTrickplaySupport.persist(
+                    downloadID: downloadID,
+                    item: download.item,
+                    mediaSource: mediaSource,
+                    client: client
+                )
+                if manifest == nil {
+                    await DownloadTrickplaySupport.persistChapterThumbs(
+                        downloadID: downloadID,
+                        item: download.item,
+                        client: client
+                    )
+                }
+                guard let manifest, let self else { return }
+
+                if let index = self.index(of: downloadID) {
+                    self.downloads[index].trickplay = manifest
+                    await self.persist()
+                }
+            }
+        }
+    }
 
     private func persistPosterImage(for download: Download) {
         let source = download.item.imageSource(
