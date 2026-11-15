@@ -75,8 +75,7 @@ final class MediaProgressReporter {
             // item is played to the end. Server reports above still run.
             if finished,
                Defaults[.Experimental.downloadsDeleteAfterWatched],
-               let download = DownloadManager.shared.completedLocalDownload(for: itemID)
-            {
+               let download = DownloadManager.shared.completedLocalDownload(for: itemID) {
                 DownloadManager.shared.delete(download.id)
             }
         }

@@ -69,6 +69,7 @@ struct DownloadLibraryView: View {
                         let lSeason = lhs.item.parentIndexNumber ?? 0
                         let rSeason = rhs.item.parentIndexNumber ?? 0
                         guard lSeason == rSeason else { return lSeason < rSeason }
+
                         return (lhs.item.indexNumber ?? 0) < (rhs.item.indexNumber ?? 0)
                     }
                 )
@@ -174,6 +175,7 @@ struct DownloadLibraryView: View {
 
     // MARK: - Selection
 
+    @ContentBuilder
     private var selectionBar: some View {
         HStack {
             Button(L10n.selectAll) {
@@ -319,10 +321,12 @@ private struct DownloadRow: View {
     }
 
     private var timeLeft: TimeInterval? {
-        guard
-            let total = download.totalBytesExpected, total > 0,
-            let written = download.bytesWritten, total > written,
-            let speed = download.speedBytesPerSecond, speed > 0
+        guard let total = download.totalBytesExpected,
+              total > 0,
+              let written = download.bytesWritten,
+              total > written,
+              let speed = download.speedBytesPerSecond,
+              speed > 0
         else { return nil }
 
         return Double(total - written) / speed

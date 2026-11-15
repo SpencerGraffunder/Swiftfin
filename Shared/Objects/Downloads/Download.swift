@@ -114,12 +114,14 @@ struct Download: Codable, Identifiable, Hashable, Sendable {
     /// "playable offline" checks (play button, resolver, downloads list).
     var localFileURL: URL? {
         guard state == .completed, FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+
         return fileURL
     }
 
     /// The actual size of the downloaded file on disk, when present.
     var localFileSize: Int64? {
         guard let url = localFileURL else { return nil }
+
         let values = try? url.resourceValues(forKeys: [.fileSizeKey])
         return values?.fileSize.map(Int64.init)
     }
@@ -134,10 +136,12 @@ struct Download: Codable, Identifiable, Hashable, Sendable {
         if let bytes = bytesWritten, bytes > 0 {
             return totalBytesExpected ?? bytes
         }
-        guard
-            let bitrate = mediaSource.bitrate, bitrate > 0,
-            let ticks = mediaSource.runTimeTicks, ticks > 0
+        guard let bitrate = mediaSource.bitrate,
+              bitrate > 0,
+              let ticks = mediaSource.runTimeTicks,
+              ticks > 0
         else { return nil }
+
         // ticks/10_000_000 = seconds; multiply first to stay in Int64 range.
         return Int64(bitrate) * (Int64(ticks) / 10_000_000) / 8
     }
