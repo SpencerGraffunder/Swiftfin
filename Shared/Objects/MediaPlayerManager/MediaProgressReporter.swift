@@ -72,7 +72,7 @@ final class MediaProgressReporter {
             let offlinePlayback = mediaSession?.intent.offline != nil
             LocalPlaybackPositions.shared.record(
                 itemID: itemID,
-                ticks: finished ? 0 : ticks,
+                ticks: Int64(finished ? 0 : ticks),
                 completed: finished,
                 needsReplay: offlinePlayback
             )

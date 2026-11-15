@@ -256,11 +256,9 @@ private struct DownloadRow: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
-                if let info = infoText {
-                    info
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                infoText
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 4)
