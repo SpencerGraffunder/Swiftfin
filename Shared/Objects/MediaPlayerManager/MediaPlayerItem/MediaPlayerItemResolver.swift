@@ -32,7 +32,7 @@ enum MediaPlayerItemResolver {
         // plain online intent (detail play button, episode-card tap, autoplay
         // next episode). Deleting the download restores online playback.
         if let local = DownloadManager.shared.completedLocalDownload(for: intent.entry.itemID) {
-            let offline: OfflinePlayback = .init(fileURL: local.fileURL, mediaSource: local.mediaSource)
+            let offline: PlaybackIntent.OfflinePlayback = .init(fileURL: local.fileURL, mediaSource: local.mediaSource)
             var offlineIntent = intent
             offlineIntent.offline = offline
 

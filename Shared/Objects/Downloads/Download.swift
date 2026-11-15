@@ -135,10 +135,11 @@ struct Download: Codable, Identifiable, Hashable, Sendable {
             return totalBytesExpected ?? bytes
         }
         guard
-            let bitrate = mediaSource.containerBitrate, bitrate > 0,
+            let bitrate = mediaSource.bitrate, bitrate > 0,
             let ticks = mediaSource.runTimeTicks, ticks > 0
         else { return nil }
-        return bitrate / 8 * ticks / 10_000_000
+        // ticks/10_000_000 = seconds; multiply first to stay in Int64 range.
+        return Int64(bitrate) * (Int64(ticks) / 10_000_000) / 8
     }
 
     /// Bytes written so far in the active transfer (live while downloading).
