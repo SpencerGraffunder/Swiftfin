@@ -182,6 +182,15 @@ extension NavigationRoute {
         }
     }
 
+    /// Download behavior settings, reached from the Downloads tab gear.
+    static var downloadsSettings: NavigationRoute {
+        NavigationRoute(
+            id: "downloadsSettings"
+        ) {
+            DownloadsSettingsView()
+        }
+    }
+
     #if os(iOS)
     static var gestureSettings: NavigationRoute {
         NavigationRoute(
