@@ -27,10 +27,16 @@ import JellyfinAPI
 enum AutoQueueSweep {
 
     /// Position of an episode inside its series (season first, then episode).
+    /// `<` is explicit: the Xcode 27 toolchain does NOT synthesize
+    /// Comparable for struct declarations (CI-only type error otherwise).
     struct EpisodePosition: Comparable {
 
         let season: Int
         let episode: Int
+
+        static func < (lhs: Self, rhs: Self) -> Bool {
+            (lhs.season, lhs.episode) < (rhs.season, rhs.episode)
+        }
     }
 
     static func position(of item: BaseItemDto) -> EpisodePosition {
