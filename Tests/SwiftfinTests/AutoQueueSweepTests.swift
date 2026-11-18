@@ -186,8 +186,10 @@ final class AutoQueueSweepTests: XCTestCase {
             downloads["e5"] = makeDownload(episode, state: .downloading)
         }
 
-        // Never a duplicate of anything already tracked.
+        // Never a duplicate of anything already tracked. (isDisjoint is used
+        // deliberately: Set.intersects is newer SDK-only and absent from the
+        // CI toolchain's overlay.)
         let queued = sweep()
-        XCTAssertTrue(queued.isEmpty || !Set(queued).intersects(downloads.keys))
+        XCTAssertTrue(queued.isEmpty || Set(queued).isDisjoint(with: downloads.keys))
     }
 }
