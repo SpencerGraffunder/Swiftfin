@@ -303,81 +303,79 @@ final class DownloadManager: ObservableObject {
         }
     }
 
-    /// Remove several downloads at once (downloads-library multi-select).
-    /// Queue the next N episodes for download after one starts playing
-    /// (round-3 "download next n episodes"). Gated by the Wi-Fi/cellular
-    /// policy; failures (offline, removed show) are logged and skipped so the
-    /// next play start retries. Existing downloads are never re-queued.
-    func autoQueueNextEpisodes(after episode: BaseItemDto, userSession: UserSession) async {
+    /// Rolling auto-queue sweep (round 7): for every series the user has an
+    /// episode downloaded, keep `downloadsAutoQueueNext` episodes in flight.
+    /// Triggered when an episode finishes downloading and when the setting
+    /// changes — NOT when playback starts, so the window fills even if the
+    /// user never plays the episode on this device. Gated by the Wi-Fi/
+    /// cellular policy (manual downloads are never gated). Failures (offline,
+    /// removed show) are logged and skipped; the next trigger retries.
+    func runAutoQueueSweep() async {
         let count = Defaults[.Experimental.downloadsAutoQueueNext]
-        guard count > 0,
-              episode.type == .episode,
-              let seriesID = episode.seriesID?.nilIfBlank,
-              DownloadNetworkPolicy.allowsAutoDownload(allowCellular: Defaults[.Experimental.downloadsAllowCellular])
-        else { return }
+        guard count > 0, Defaults[.Experimental.downloads] else { return }
+
+        var trackedBySeries: [String: [Download]] = [:]
+        for download in downloads {
+            guard download.item.type == .episode, let seriesID = download.item.seriesID?.nilIfBlank else { continue }
+
+            trackedBySeries[seriesID, default: []].append(download)
+        }
+        guard trackedBySeries.isNotEmpty, let userSession = Container.shared.currentUserSession() else { return }
+        guard DownloadNetworkPolicy.allowsAutoDownload(allowCellular: Defaults[.Experimental.downloadsAllowCellular]) else {
+            logger.info("Auto-queue: sweep deferred (network policy: no Wi-Fi, cellular not allowed)")
+
+            return
+        }
 
         await start()
 
         let client = userSession.client
         let userID = userSession.user.id
 
-        var seasons: [BaseItemDto]
-        do {
-            var parameters = Paths.GetSeasonsParameters()
-            parameters.userID = userID
-            let response = try await client.send(Paths.getSeasons(seriesID: seriesID, parameters: parameters))
-            seasons = (response.value.items ?? []).sorted { ($0.indexNumber ?? 0) < ($1.indexNumber ?? 0) }
-        } catch {
-            logger.warning("Auto-queue: unable to load seasons for \(seriesID): \(error.localizedDescription)")
+        for (seriesID, tracked) in trackedBySeries {
+            let slots = count - AutoQueueSweep.pendingCount(in: tracked)
+            guard slots > 0, let anchorItem = AutoQueueSweep.anchor(in: tracked) else { continue }
 
-            return
-        }
+            let anchorPosition = AutoQueueSweep.position(of: anchorItem)
+            let trackedIDs = Set(tracked.map(\.id))
 
-        var seasonIndex = seasons.firstIndex { $0.id == episode.seasonID }
-            ?? seasons.firstIndex { $0.indexNumber == episode.parentIndexNumber }
-            ?? 0
-
-        var candidates: [BaseItemDto] = []
-        var seenCurrent = seasonIndex > 0
-
-        while seasonIndex < seasons.count, candidates.count < count {
-            defer { seasonIndex += 1 }
-            guard let seasonID = seasons[seasonIndex].id else { continue }
-
-            let episodes: [BaseItemDto]
+            var candidates: [BaseItemDto] = []
             do {
-                let response = try await client.send(SeasonDownloads.episodesRequest(seasonID: seasonID, userID: userID))
-                episodes = (response.value.items ?? []).sorted { ($0.indexNumber ?? 0) < ($1.indexNumber ?? 0) }
+                var parameters = Paths.GetSeasonsParameters()
+                parameters.userID = userID
+                let response = try await client.send(Paths.getSeasons(seriesID: seriesID, parameters: parameters))
+                let seasons = (response.value.items ?? []).sorted { ($0.indexNumber ?? 0) < ($1.indexNumber ?? 0) }
+
+                var seasonIndex = seasons.firstIndex { $0.id == anchorItem.seasonID?.nilIfBlank }
+                    ?? seasons.firstIndex { $0.indexNumber == anchorItem.parentIndexNumber }
+                    ?? 0
+
+                while seasonIndex < seasons.count, candidates.count < slots {
+                    defer { seasonIndex += 1 }
+                    guard let seasonID = seasons[seasonIndex].id else { continue }
+
+                    let response = try await client.send(SeasonDownloads.episodesRequest(seasonID: seasonID, userID: userID))
+                    let playable = SeasonDownloads.downloadableEpisodes(from: response.value.items ?? [], existing: { _ in nil })
+                    candidates += AutoQueueSweep.candidates(
+                        from: playable,
+                        after: anchorPosition,
+                        excluding: trackedIDs,
+                        limit: slots - candidates.count
+                    )
+                }
             } catch {
-                logger.warning("Auto-queue: unable to load episodes for \(seasonID): \(error.localizedDescription)")
+                logger.warning("Auto-queue: unable to load episodes for series \(seriesID): \(error.localizedDescription)")
 
-                break
+                continue
             }
 
-            for candidate in episodes {
-                guard let candidateID = candidate.id else { continue }
-
-                if !seenCurrent {
-                    seenCurrent = candidateID == episode.id
-                    continue
-                }
-                guard candidateID != episode.id, index(of: candidateID) == nil else { continue }
-
-                candidates.append(candidate)
-                if candidates.count >= count {
-                    break
-                }
+            for candidate in candidates {
+                await download(candidate, options: .direct(candidate))
             }
 
-            seenCurrent = true
-        }
-
-        for candidate in candidates {
-            await download(candidate, options: .direct(candidate))
-        }
-
-        if candidates.isNotEmpty {
-            logger.info("Auto-queue: queued \(candidates.count) episode(s) after \(episode.id ?? "?")")
+            if candidates.isNotEmpty {
+                logger.info("Auto-queue: queued \(candidates.count) episode(s) for series \(seriesID) (anchor \(anchorItem.id ?? "?"))")
+            }
         }
     }
 
@@ -472,6 +470,14 @@ final class DownloadManager: ObservableObject {
         downloads[index].state = .completed
         downloads[index].progress = 1
         Task { await persist() }
+
+        // Rolling auto-queue: an episode just landed on disk, freeing a
+        // window slot — top every series up to the configured depth.
+        if downloads[index].item.type == .episode {
+            Task { [weak self] in
+                await self?.runAutoQueueSweep()
+            }
+        }
     }
 
     func markFailed(_ downloadID: String, reason: String? = nil) {

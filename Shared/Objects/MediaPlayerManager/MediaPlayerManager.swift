@@ -102,15 +102,9 @@ final class MediaPlayerManager {
             intent.queue = EpisodeMediaPlayerQueue()
         }
 
-        // "Download next N episodes while watching" (round 3). Fire-and-forget:
-        // gating and dedup live inside the manager.
-        if Defaults[.Experimental.downloads], Defaults[.Experimental.downloadsAutoQueueNext] > 0, intent.item.type == .episode {
-            let episode = intent.item
-            let session = userSession
-            Task {
-                await DownloadManager.shared.autoQueueNextEpisodes(after: episode, userSession: session)
-            }
-        }
+        // Auto-queue is NOT triggered here: the rolling window is swept when
+        // an episode finishes downloading and when the setting changes
+        // (round 7), so it fills without requiring playback on this device.
 
         let session = MediaSession(
             intent: intent,

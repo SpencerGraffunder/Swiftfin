@@ -29,8 +29,17 @@ struct DownloadsSettingsView: View {
                 Picker(L10n.downloadAutoQueueNext, selection: $downloadsAutoQueueNext) {
                     Text(L10n.off).tag(0)
                     ForEach(1 ... 5, id: \.self) { count in
-                        Text(L10n.downloadAutoQueueCount(count)).tag(count)
+                        Text(count == 1 ? L10n.downloadAutoQueueCountOne(count) : L10n.downloadAutoQueueCount(count)).tag(count)
                     }
+                }
+                .onChange(of: downloadsAutoQueueNext) { _, newCount in
+                    // Setting-change trigger for the rolling auto-queue:
+                    // re-check every downloaded series when N changes
+                    // (round 7). The completion trigger lives in
+                    // DownloadManager.markCompleted.
+                    guard newCount > 0 else { return }
+
+                    Task { await DownloadManager.shared.runAutoQueueSweep() }
                 }
             } footer: {
                 Text(L10n.downloadAutoQueueNextDescription)

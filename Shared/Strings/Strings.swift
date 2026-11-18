@@ -632,34 +632,31 @@ internal enum L10n {
   internal static let doubleTouch = L10n.tr("Localizable", "doubleTouch", fallback: "Double touch")
   /// Download
   internal static let download = L10n.tr("Localizable", "download", fallback: "Download")
-  /// %1$@ of %2$@
-  /// %%d
-internal static func downloadAutoQueueCount(_ p1: Int) -> String {
-    return L10n.tr("Localizable", "downloadAutoQueueCount", p1, fallback: "%%d")
+  /// Next %d Episodes
+  internal static func downloadAutoQueueCount(_ p1: Int) -> String {
+    return L10n.tr("Localizable", "downloadAutoQueueCount", p1, fallback: "Next %d Episodes")
   }
-
+  /// Next %d Episode
+  internal static func downloadAutoQueueCountOne(_ p1: Int) -> String {
+    return L10n.tr("Localizable", "downloadAutoQueueCountOne", p1, fallback: "Next %d Episode")
+  }
   /// Auto-Download Next Episodes
-internal static let downloadAutoQueueNext = L10n.tr("Localizable", "downloadAutoQueueNext", fallback: "Auto-Download Next Episodes")
-
-  /// While playing an episode, automatically start downloading the next episodes in the series.
-internal static let downloadAutoQueueNextDescription = L10n.tr("Localizable", "downloadAutoQueueNextDescription", fallback: "While playing an episode, automatically start downloading the next episodes in the series.")
-
+  internal static let downloadAutoQueueNext = L10n.tr("Localizable", "downloadAutoQueueNext", fallback: "Auto-Download Next Episodes")
+  /// After you download an episode, automatically queue the next episodes of that series until this many are waiting. Re-checked whenever an episode finishes downloading or you change this number.
+  internal static let downloadAutoQueueNextDescription = L10n.tr("Localizable", "downloadAutoQueueNextDescription", fallback: "After you download an episode, automatically queue the next episodes of that series until this many are waiting. Re-checked whenever an episode finishes downloading or you change this number.")
+  /// %1$@ of %2$@
   internal static func downloadBytesProgress(_ p1: Any, _ p2: Any) -> String {
     return L10n.tr("Localizable", "downloadBytesProgress", String(describing: p1), String(describing: p2), fallback: "%1$@ of %2$@")
   }
-  /// Downloaded
   /// Download Over Cellular
-internal static let downloadCellular = L10n.tr("Localizable", "downloadCellular", fallback: "Download Over Cellular")
-
+  internal static let downloadCellular = L10n.tr("Localizable", "downloadCellular", fallback: "Download Over Cellular")
   /// Allow automatic downloads to use cellular data. Downloads you start yourself always use the current connection.
-internal static let downloadCellularDescription = L10n.tr("Localizable", "downloadCellularDescription", fallback: "Allow automatic downloads to use cellular data. Downloads you start yourself always use the current connection.")
-
+  internal static let downloadCellularDescription = L10n.tr("Localizable", "downloadCellularDescription", fallback: "Allow automatic downloads to use cellular data. Downloads you start yourself always use the current connection.")
   /// Delete After Watched
-internal static let downloadDeleteAfterWatched = L10n.tr("Localizable", "downloadDeleteAfterWatched", fallback: "Delete After Watched")
-
+  internal static let downloadDeleteAfterWatched = L10n.tr("Localizable", "downloadDeleteAfterWatched", fallback: "Delete After Watched")
   /// Automatically delete a download after you finish watching the episode.
-internal static let downloadDeleteAfterWatchedDescription = L10n.tr("Localizable", "downloadDeleteAfterWatchedDescription", fallback: "Automatically delete a download after you finish watching the episode.")
-
+  internal static let downloadDeleteAfterWatchedDescription = L10n.tr("Localizable", "downloadDeleteAfterWatchedDescription", fallback: "Automatically delete a download after you finish watching the episode.")
+  /// Downloaded
   internal static let downloaded = L10n.tr("Localizable", "downloaded", fallback: "Downloaded")
   /// ~%@
   internal static func downloadEstimatedSize(_ p1: Any) -> String {
@@ -667,12 +664,11 @@ internal static let downloadDeleteAfterWatchedDescription = L10n.tr("Localizable
   }
   /// Download Failed
   internal static let downloadFailed = L10n.tr("Localizable", "downloadFailed", fallback: "Download Failed")
-  /// Downloading…
-  /// Failed: %%@
-internal static func downloadFailedReason(_ p1: Any) -> String {
-    return L10n.tr("Localizable", "downloadFailedReason", String(describing: p1), fallback: "Failed: %%@")
+  /// Failed: %@
+  internal static func downloadFailedReason(_ p1: Any) -> String {
+    return L10n.tr("Localizable", "downloadFailedReason", String(describing: p1), fallback: "Failed: %@")
   }
-
+  /// Downloading…
   internal static let downloading = L10n.tr("Localizable", "downloading", fallback: "Downloading…")
   /// Download Options
   internal static let downloadOptions = L10n.tr("Localizable", "downloadOptions", fallback: "Download Options")
@@ -696,7 +692,6 @@ internal static func downloadFailedReason(_ p1: Any) -> String {
   }
   /// Stream could not be resolved
   internal static let downloadStreamUnavailable = L10n.tr("Localizable", "downloadStreamUnavailable", fallback: "Stream could not be resolved")
-
   /// %@ left
   internal static func downloadTimeLeft(_ p1: Any) -> String {
     return L10n.tr("Localizable", "downloadTimeLeft", String(describing: p1), fallback: "%@ left")
